@@ -59,6 +59,12 @@ case the ceiling moved from 0.84 to 0.96 without a single training change.
 longer reasoning don't help; RL reward rises but eval doesn't; the judge disagrees with exact checks; the same answer
 form passes on one item and fails on a near-identical one.
 
+**Keep a second, harder eval built differently from your training data.** Our model reached the top of eval v2.2
+(0.96, ahead of a strong reasoning baseline). On eval v3 (larger screens, multi-part and propagating edits) it fell
+10 points *below* the untrained base model. The training had shortened its reasoning and its edits to fit the
+v2-style distribution. One eval close to the training distribution can show steady progress while general
+capability declines.
+
 ## 3. Data
 - **A procedural generator** for coverage of edit types with exact references (cheap, unlimited, but narrow and
   template-flavored; models overfit to its specific values, so randomize targets).
@@ -75,6 +81,8 @@ form passes on one item and fails on a near-identical one.
   count), and train on them with the exact inference-time prompt rendering.
 - **LoRA adapters, stacked.** Each stage trains a new adapter on top of the merged previous ones; keep every stage's
   adapter so any combination can be evaluated or resumed.
+- **Don't select the shortest correct trace.** It trains the model to think less. Pick median-length traces, and
+  track thinking length and answer completeness on a hard eval every round.
 - SFT on own traces mostly makes the model *reliable* at what it can already do; by itself it barely beat the base
   model with thinking here (+1 ± 3 points). Its job is to give RL a good starting point.
 
@@ -113,4 +121,5 @@ form passes on one item and fails on a near-identical one.
 5. SFT on the model's own correct reasoning.
 6. RL on sometimes-solved prompts with an effect-based reward.
 7. After every plateau, audit the eval and the reward before changing the model.
-8. When the eval saturates, make it harder.
+8. When the eval saturates, make it harder, and keep a hard eval built differently from the training data
+   from the start; check every round against it.

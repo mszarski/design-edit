@@ -1108,6 +1108,50 @@ keeps only correct traces that never mention the note. Then we train on them *wi
   mostly goal and structure requests. They need better training data there (more and harder goal and structure
   examples, with verified references), not more optimization on the current set.
 
+## Eval v3: harder items on larger screens (and our training doesn't transfer)
+
+Eval v2.2 saturated at about 0.96, so eval v3 asks for harder edits under the same grading conventions
+(`eval_v3/SPEC.md`, `eval_v3/CONVENTIONS.md`).
+
+* **New, larger screens.** There are 40 screens, all of new types, with a median of 83 nodes (v2: 15–45). They have
+  repeated components and a few realistic imperfections each.
+* **Item kinds that need care, not guessing:**
+  * goal: designer-level goals that need several coordinated changes;
+  * structure: regroup, re-nest and reorder;
+  * multi_step: 2–4 changes in one request;
+  * propagate: reach every instance or implied consequence;
+  * system_audit: fix off-system values in a region and leave on-system ones alone;
+  * pattern_copy: build a new card or row exactly like the existing ones.
+* **Built by an agent workflow** (`eval_v3/build_workflow.js`, `eval_v3/tool.py`). Five Opus authors each wrote 8
+  screens and about 36 items. A separate blind Opus reviewer per batch tried its own valid answers against the
+  checks, then approved, fixed or rejected each item.
+* **The gate is stricter than v2.2's.** The reference passes, a different valid answer passes, doing nothing fails,
+  and at least one plausible wrong answer ("trap") must fail the exact checks.
+* Result: 181 written; 176 approved, about a quarter of them after fixes; 5 rejected as too easy. The split is dev
+  88 / test 88, by screen. Dataset: `mszarski/design-edits-eval-v3` (private).
+
+| eval v3 (176 items, judge DeepSeek-V4.1-Flash) | all | goal | multi_step | pattern_copy | propagate | structure | system_audit |
+|---|---|---|---|---|---|---|---|
+| plain Qwen 3.8 27B, reasoning | **0.767** | **0.886** | **0.657** | 0.600 | **0.784** | **0.846** | 0.667 |
+| plain Gemma 4 31B, thinking | 0.747 | 0.857 | 0.647 | **0.667** | 0.703 | 0.763 | **0.867** |
+| **v13 (our best on v2.2)** | 0.644 | 0.829 | 0.618 | 0.533 | 0.568 | 0.658 | 0.533 |
+| DeepSeek-V3.2, no reasoning | 0.218 | 0.457 | 0.143 | 0.200 | 0.189 | 0.079 | 0.286 |
+
+* **v3 is much harder:** Qwen drops from 0.924 to 0.767 and DeepSeek-V3.2 from 0.686 to 0.218. 21 items fail for
+  every model.
+* **Our training made Gemma worse on harder edits.** Paired on the same items, v13 trails plain Gemma with thinking
+  by 10.3 ± 7.5 points (wins 14, loses 32) and Qwen by 12.6 ± 7.6. On v2.2 it led both.
+* **Why: training compressed the reasoning and the edits.**
+  * v13 thinks a median 155 words on v3; plain Gemma thinks 350.
+  * On the items v13 loses, its patches are shorter than plain Gemma's (median 4 lines against 6) and than the
+    reference (5). It does part of the job: it converts some prices but not all of them, or fixes some
+    off-system values but misses others.
+  * This is what the training selected for. The SFT kept the *shortest* correct trace. RL ran on v2-style
+    single, local edits on small screens with a tight token cap. Rewards and lint favored small patches.
+* **Lesson: an eval that matches the training distribution hides overfitting.** Every round after v12 looked like
+  progress or a plateau on v2.x. Only a harder, differently built eval showed that the model had lost general
+  capability.
+
 ## Eval v2.2: blind re-review by Opus agents, fresh checks, a held-out split
 
 An independent review of v13's 66 eval-v2.1 failures found that about half were still grading defects. It also
@@ -1361,6 +1405,10 @@ compared against plain Qwen *with* reasoning. `design-edit-sft27b` (trained no-t
   exactly as at inference (`--match-inference-prompt`).
 
 ### Where it stands
+**Update (eval v3):** on harder items on larger screens, the trained model (0.644) is significantly *below* plain
+Gemma with thinking (0.747) and plain Qwen (0.767). Training compressed the reasoning and the edits (see "Eval v3").
+On the v2-style distribution below it is the best model; it does not generalize to harder edits.
+
 On eval v2.2 (398 items, blind-repaired), our RL models score 0.955–0.960. That is significantly above plain
 Qwen 3.8 27B with reasoning (0.924; +3 ± 2.8 points paired) and far above plain Gemma (0.708, or 0.861 with
 thinking). The best checkpoints are statistically tied; v13 and RL v12b checkpoint-150 are equally good choices. The
@@ -1388,6 +1436,13 @@ better model.
    * Compare models item by item. Most differences at this level are within ±2–4 points.
 
 ### Next steps, in priority order
+- **Retrain without compressing reasoning, and check on v3.**
+  * Select median-length or longest correct traces, not the shortest.
+  * Add hard, multi-part and propagating items on large screens to SFT and RL (generated with the v3 authoring
+    workflow, from new seeds).
+  * Raise the RL token cap.
+  * Track thinking length and patch completeness per round.
+  * Pick checkpoints on v3 dev and report on v3 test, with v2.2 as a regression check.
 - **A harder eval (v3).** Eval v2.2 is nearly saturated at about 0.96. Write harder goal and structure requests,
   multi-step edits and larger screens with the same conventions, blind Opus review and checks. Keep a held-out split.
 - **Fix `rewards.lint`** so it uses each item's design-system type scale and colours. It currently penalizes
