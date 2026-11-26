@@ -175,6 +175,20 @@ clipping, sibling overlap, text overflow and off-page content.
   * Keep it out of the RL reward: at about 75% agreement it adds little beyond the exact checks and the geometry.
   * The visual lever worth testing is the model seeing its own screenshot in the review round (running).
 
+## Visual review round (Gemma sees a screenshot of its edit): worse, because it over-edits
+| plain Gemma, eval v3 | all | dev | test | goal | multi_step | pattern_copy | propagate | structure | system_audit |
+|---|---|---|---|---|---|---|---|---|---|
+| review round, text only | **0.874** | 0.897 | 0.851 | 0.971 | 0.794 | 0.800 | 0.865 | 0.895 | 0.867 |
+| review round + screenshot and close-up | 0.806 | 0.793 | 0.828 | 0.857 | 0.824 | 0.867 | 0.892 | 0.667 | 0.733 |
+
+* **Paired:** −6.3 ± 5.6 (+7/−18).
+* **It helps a little on pattern_copy, multi_step and propagate, but loses on structure (−23) and goal.** Of the 18
+  losses, most fail "Nothing unrelated to the request changes". Seeing the rendered page, the model "polishes" what it
+  notices, for example shrinking a title to improve "vertical balance" or snapping nearby values. The screenshot
+  invites over-editing.
+* **Possible fix to test:** tell the review turn to judge the screenshot only for problems the patch caused, and not to
+  touch anything the request didn't ask for. Until that is shown to help, the review round stays text-only.
+
 ## Phase 2 result: SFT on plain Gemma's own review episodes does not add capability
 
 | | eval v3 single pass | eval v3 + review round | eval v2.2 | thinking (median words) |
