@@ -16,8 +16,15 @@ Check the result against the request{ds}. If it fully and minimally does what wa
 Otherwise reply with a corrected complete patch (relative to the ORIGINAL design). Reply with the patch only."""
 
 
+def _text(content) -> str:
+    """Message content as text (multimodal content is a list of parts; keep the text parts)."""
+    if isinstance(content, list):
+        return "\n".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
+    return content
+
+
 def _design_of(prompt: list[dict]) -> str | None:
-    m = re.search(r"Design:\n(.*?)\n\nRequest: ", prompt[-1]["content"], re.S)
+    m = re.search(r"Design:\n(.*?)\n\nRequest: ", _text(prompt[-1]["content"]), re.S)
     return m.group(1) if m else None
 
 
@@ -25,7 +32,7 @@ def review_message(prompt: list[dict], output: str) -> str:
     from .goal_reward import describe_changes
 
     text = _design_of(prompt)
-    ds = " and the design system" if "Design system:" in prompt[-1]["content"] else ""
+    ds = " and the design system" if "Design system:" in _text(prompt[-1]["content"]) else ""
     patch = strip_fences(output).strip()
     if text is None:
         return REVIEW.format(outcome="", ds=ds)
