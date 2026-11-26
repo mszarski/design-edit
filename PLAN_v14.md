@@ -195,6 +195,29 @@ clipping, sibling overlap, text overflow and off-page content.
 * **Decision:** the review round stays text-only. Revisit the screenshot after RL, or in two-turn RL where the model
   can learn when to trust it.
 
+## Two more visual tests at inference (plain Gemma, eval v3, text review round as baseline 0.874)
+* **Screenshot of the original design in the first turn:** 0.856 (−1.7 ± 5.6). Multi_step 0.912 (+12), goal −11,
+  audit −13.
+* **Completeness check after the review** (a screenshot turn that may only add lines): 0.862 (−1.1 ± 2.8). It
+  changed only 3 of 176 answers, so it's effectively inert.
+* **The pattern across all four visual tests:** the image reliably helps multi-part requests (+12 each time) and hurts
+  goal and audit requests. Net, nothing beats the text-only review. Vision stays in the geometry reward and the eval
+  column. Revisit it in two-turn RL, where the model can learn when the picture helps.
+
+## Phase 3, stage 1: prompt re-pick on plain Gemma (result)
+* **Pool:** 1,399 prompts (802 hard, 597 concrete). 39 were dropped because their reference breaks the layout.
+* **Sampling:** 8 single-turn samples each at temperature 1.0, 4,096 tokens. Scored by exact checks plus rendered
+  geometry, as the RL reward does.
+* **Solve rates:**
+  * hard: 414 always, 314 sometimes, 74 never;
+  * concrete: 488 always, 62 sometimes, 47 never.
+  * 376 sometimes-solved, well above the 150 gate. Median thinking 164 words.
+* **Held out:** 51 sometimes-solved items that need a judge check (the reward ignores judge checks).
+* **Dataset `mszarski/design-edits-v14-rl`:**
+  * train: 225 prompts (182 hard, 43 concrete), base solve rate 0.643;
+  * heldout: 100 prompts, base solve rate 0.615. That's 400 graded answers per checkpoint at 4 samples each, so
+    about ±5 points.
+
 ## Phase 2 result: SFT on plain Gemma's own review episodes does not add capability
 
 | | eval v3 single pass | eval v3 + review round | eval v2.2 | thinking (median words) |
