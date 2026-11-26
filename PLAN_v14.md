@@ -116,6 +116,22 @@ directly, because models learn to pad.
   blind, plus the existing realistic set re-checked under the v2.2 conventions. Opus writes the inputs and the
   grader; Gemma is trained only on its own traces.
 
+## DeepSeek writer, second try: thinking on, the model card's settings (result)
+* **The model card** recommends temperature 1.0 and top_p 1.0; the modes are Non-think, High and Max. The router
+  setup ran out of tokens because 2–5 items per call didn't fit in 32k with reasoning. With one item per call and
+  64k tokens, V4-Pro reasons 20–32k tokens (3–4 min) and answers. DeepInfra silently ignores reasoning.
+* **Gate yield on 15 screens:**
+  * V4-Pro with thinking: 0/15;
+  * V4-Pro without thinking: 0/15 (checks too loose to catch their own traps);
+  * **V4.1-Flash with thinking: 11/15.**
+* **Opus review of Flash's 11 items:** 3 good as-is, 6 fixable, 2 rejected.
+  * Premises are much better than before.
+  * But checks reject valid answers in 5 items and accept wrong ones in 2, and many items are easy.
+  * These flaws only show when other valid answers are tried, so the writer would need a full review, not a sample.
+* **Decision:** Opus authors the hard items (B). DeepSeek is used for conversion (1C) and judging, not for authoring.
+* **Screen gate fix:** numeric properties must be numbers. The fix rejects `size=w:80,h:20`-style screens that
+  DeepSeek wrote and that the old gate let through.
+
 ## Phase 1C pilot: re-checking the realistic training set (result)
 * DeepSeek re-grading under the v2.2 conventions: 25 of 40 items pass the validator (62%). It dropped none.
 * **Blind Opus audit of those 25:**

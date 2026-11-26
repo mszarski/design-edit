@@ -52,6 +52,18 @@ def check_screen(sid):
     bad = dsl_violations({"id": "n0", "type": "frame", "props": {}, "children": []}, doc)
     if bad:
         errs.append(f"not in the design language: {bad[:3]}")
+    import re as _re
+    for n in nodes:  # malformed values the DSL parser accepts as strings, e.g. size=w:80,h:20
+        for k in ("size", "weight", "gap", "radius", "opacity", "w", "h", "pad"):
+            v = n["props"].get(k)
+            if v is None or isinstance(v, (int, float)):
+                continue
+            if k == "pad" and isinstance(v, str) and _re.fullmatch(r"\d+( \d+){0,3}", v.strip()):
+                continue
+            errs.append(f"{n['id']}: {k}={v!r} is not a number")
+            break
+        if len(errs) > 5:
+            break
     if not {"screen", "ds_seed"} <= set(meta):
         errs.append("meta needs screen and ds_seed")
     return doc, errs, len(nodes)
