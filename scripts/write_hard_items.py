@@ -19,6 +19,7 @@ import importlib.util
 import json
 import os
 import random
+import re
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -87,6 +88,15 @@ must never mean ambiguous, arbitrary or unfair.
 === SCREEN ({sid}) ===
 {design}
 
+Patch syntax reminder: "insert <parent-id> <index> <type>#<new-id> ..." inserts ONE node. To add a subtree, insert
+the container, then insert each child with the container's new id as parent, e.g.
+  insert n12 3 frame#n90 "New row" layout=row gap=8
+  insert n90 0 text#n91 "Label" text="Name" size=14
+  insert n90 1 text#n92 "Value" text="Ada" size=14
+Ops apply in order: "delete nX" removes nX and its whole subtree; "move nX nP k" uses indexes as they are at that
+moment. New ids must not exist in the design (use ids above the highest one). Only nodes that exist (or that an earlier line
+inserts) can be referenced. Check every premise against the screen: the request must change something.
+
 Write {k} items, one of each kind: {kinds}. Reply with a JSON list only. Each item:
 {{"kind": "...", "request": "...", "reference_patch": "...", "criteria": ["...", ..., "Nothing unrelated to the request changes."],
   "checks": [...], "allowed": ["n..", ...], "alternatives": ["<another valid patch>"],
@@ -95,14 +105,66 @@ Rules the automatic gate enforces: the reference and every alternative apply cle
 change something and pass all checks; the unedited design fails at least one check; every trap applies and at least
 one trap fails the checks; "allowed" lists every existing node a valid answer may touch."""
 
-REPAIR_PROMPT = """Your item was rejected by the automatic gate:
+REPAIR_PROMPT = """You wrote an item for a UI-design editing dataset; the automatic gate rejected it:
 {errors}
+
+Patch semantics: ops apply in order to the current design. "delete nX" removes nX and its whole subtree (its
+children no longer exist afterwards). "move nX nP k" moves nX to index k among nP's children (indexes count the
+children at that moment). "insert nP k <node>" inserts ONE node; children of a new node need their own insert lines
+with the new id as parent. "set nX key=value" changes props. New ids must not exist in the design.
+
+Design (the screen the item is about):
+{design}
 
 Item:
 {item}
 
 Fix the item (usually the checks, "allowed", an alternative or a trap; change the request only if its premise is
 false). Reply with the corrected item as one JSON object only."""
+
+
+_NODE = re.compile(r"^(\s*)(\w+)#(n\d+)\b")
+
+
+def canonical_inserts(patch: str) -> str:
+    """Rewrite an inserted subtree written with indented child lines into one insert per node (the patch language).
+
+        insert n5 2 frame#n90 "Row" layout=row        insert n5 2 frame#n90 "Row" layout=row
+          text#n91 "A" text="a"               ->      insert n90 0 text#n91 "A" text="a"
+          text#n92 "B" text="b"                       insert n90 1 text#n92 "B" text="b"
+    """
+    out, stack = [], []  # stack of (indent, node id, next child index)
+    for line in strip_fences(patch).splitlines():
+        if not line.strip():
+            continue
+        m = re.match(r"^\s*insert\s+(n\d+)\s+(\d+)\s+(\w+#(n\d+)\b.*)$", line)
+        if m and not line.startswith((" ", "\t")):
+            out.append(line.strip())
+            stack = [(0, m.group(4), 0)]
+            continue
+        n = _NODE.match(line)
+        if n and stack and line.startswith((" ", "\t")):
+            indent = len(n.group(1))
+            while len(stack) > 1 and stack[-1][0] >= indent:
+                stack.pop()
+            ind, pid, k = stack[-1]
+            stack[-1] = (ind, pid, k + 1)
+            out.append(f"insert {pid} {k} {line.strip()}")
+            stack.append((indent, n.group(3), 0))
+            continue
+        stack = []
+        out.append(line.strip())
+    return "\n".join(out)
+
+
+def canonicalize_item(it: dict) -> dict:
+    if isinstance(it.get("reference_patch"), str):
+        it["reference_patch"] = canonical_inserts(it["reference_patch"])
+    it["alternatives"] = [canonical_inserts(a) for a in it.get("alternatives") or [] if isinstance(a, str)]
+    for t in it.get("traps") or []:
+        if isinstance(t, dict) and isinstance(t.get("patch"), str):
+            t["patch"] = canonical_inserts(t["patch"])
+    return it
 
 
 def load_tool(work: Path):
@@ -179,16 +241,22 @@ def main() -> None:
             if not isinstance(it, dict):
                 continue
             it["screen_id"] = sid
+            canonicalize_item(it)
             path = work / "proposals" / f"{iid}.json"
             path.write_text(json.dumps(it, indent=1))
             try:
                 _, errs = T.gate(iid)
             except Exception as e:  # noqa: BLE001
                 errs = [f"{type(e).__name__}: {e}"]
-            if errs:
-                fixed = parse_json(ask(REPAIR_PROMPT.format(errors="\n".join(errs), item=json.dumps(it, indent=1)), 16000, think=False))
+            for _ in range(2 if errs else 0):
+                if not errs:
+                    break
+                fixed = parse_json(ask(REPAIR_PROMPT.format(errors="\n".join(errs), design=design,
+                                                            item=json.dumps(it, indent=1)), 16000, think=False))
                 if isinstance(fixed, dict):
+                    it = fixed
                     fixed["screen_id"] = sid
+                    canonicalize_item(fixed)
                     path.write_text(json.dumps(fixed, indent=1))
                     try:
                         _, errs = T.gate(iid)

@@ -77,7 +77,26 @@ directly, because models learn to pad.
 **Phase 1 writer and reviewer** (decided): DeepSeek-V4-Pro writes the screens and items
 (`scripts/write_hard_items.py`), and Opus agents review them blind, approving, fixing or rejecting each.
 
-## Phase 1: hard training data (about $30–60 of API calls, plus about 1M agent tokens; 1 day)
+## Inference tests on plain Gemma 4 31B, eval v3 (result)
+
+| plain Gemma, thinking | all | dev | goal | multi_step | pattern_copy | propagate | structure | system_audit | thinking words |
+|---|---|---|---|---|---|---|---|---|---|
+| normal prompt | 0.747 | 0.747 | 0.857 | 0.647 | 0.667 | 0.703 | 0.763 | 0.867 | 350 |
+| + checklist in the system prompt | 0.747 | 0.736 | 0.714 | 0.765 | 0.733 | 0.757 | 0.816 | 0.600 | 456 |
+| **+ one review round** | **0.874** | **0.897** | 0.971 | 0.794 | 0.800 | 0.865 | 0.895 | 0.867 | 513 |
+
+* **The checklist does nothing overall** (+17/−17). It helps sweep-type kinds and hurts goal and audit requests.
+  More thinking alone doesn't help.
+* **One review round adds +12.6 ± 6.1 points** (+27/−5; dev +14.9 ± 8.7). The model sees its own patch applied:
+  the list of changes and the resulting design. Nothing from the grader is shown. It then keeps or corrects the
+  patch. Plain Gemma with a review round (0.874) is well above plain Qwen in one pass (0.767). Qwen with a review
+  round hasn't been measured.
+* **What this changes:**
+  * **Phase 2:** generate traces with the review loop. More hard prompts get solved, so more get a correct trace.
+    Train on the full two-turn exchange, so the model learns to review, or on the corrected final answer.
+  * **Phase 3:** include the review turn in RL, rewarding the final patch.
+  * **Ship the review round at inference** regardless; it costs one extra model call.
+ hard training data (about $30–60 of API calls, plus about 1M agent tokens; 1 day)
 - **Writer:** a script, not agents. It reuses `eval_v3/SPEC.md`, the conventions and `eval_v3/tool.py`'s gate, with
   DeepSeek-V4-Pro on the HF router as the writer.
   - The gate requires: the reference passes; an alternative passes; doing nothing fails; a trap fails the checks.
