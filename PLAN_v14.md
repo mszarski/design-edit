@@ -31,6 +31,33 @@ At the same time, make these code fixes. They need no GPU.
   exactly gradable.
 - Log thinking-length and patch-length statistics in `eval_model.py`'s summary.
 
+## Phase 0 result: every stage cost a little, in step with shorter thinking
+
+| eval v3 (176 items) | pass | goal | multi_step | pattern_copy | propagate | structure | system_audit | thinking words (median) |
+|---|---|---|---|---|---|---|---|---|
+| plain Gemma, thinking | **0.747** | 0.857 | 0.647 | 0.667 | 0.703 | 0.763 | 0.867 | 350 |
+| v12 reasoning SFT | 0.690 | 0.857 | 0.618 | 0.533 | 0.622 | 0.763 | 0.600 | 282 |
+| + RL v12 checkpoint-150 | 0.667 | 0.829 | 0.471 | 0.533 | 0.649 | 0.763 | 0.667 | 206 |
+| + RL v12b + v13 hint SFT (v13) | 0.644 | 0.829 | 0.618 | 0.533 | 0.568 | 0.658 | 0.533 | 154 |
+
+Paired, step by step:
+- SFT against plain Gemma: −5.8 ± 6.7 points;
+- RL v12 against the SFT: −1.7 ± 5.4;
+- v13 against RL v12: −2.3 ± 5.7.
+
+No single step is significant, but every step moves the same way. Over the whole chain the loss is −10.3 ± 7.5,
+which is significant. Median thinking falls at each stage, 350 → 282 → 206 → 154 words. The biggest drops are on
+system_audit and propagate, which need a full sweep of the screen.
+
+**Verdict.** There is no single culprit, so phase 2 can't be skipped.
+- The SFT already cost about 6 points and 20% of the thinking. Shortest-trace selection and v2-only data are the
+  likely cause.
+- RL kept shortening the thinking.
+- Run phases 2 and 3 as planned, with these additions:
+  - phase 2 must keep median thinking at least 80% of plain Gemma's (≥ 280 words) on v3 dev;
+  - phase 3 stops if thinking falls by more than 25%;
+  - phase 3 runs both v3 dev and v2.2 dev at every checkpoint.
+
 ## Phase 1: hard training data (about $30–60 of API calls, plus about 1M agent tokens; 1 day)
 - **Writer:** a script, not agents. It reuses `eval_v3/SPEC.md`, the conventions and `eval_v3/tool.py`'s gate, with
   DeepSeek-V4-Pro on the HF router as the writer.

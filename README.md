@@ -1148,6 +1148,17 @@ Eval v2.2 saturated at about 0.96, so eval v3 asks for harder edits under the sa
     off-system values but misses others.
   * This is what the training selected for. The SFT kept the *shortest* correct trace. RL ran on v2-style
     single, local edits on small screens with a tight token cap. Rewards and lint favored small patches.
+* **Where the drop happens:**
+
+  | model | v3 pass | median thinking words |
+  |---|---|---|
+  | plain Gemma, thinking | 0.747 | 350 |
+  | v12 reasoning SFT | 0.690 | 282 |
+  | + RL v12 checkpoint-150 | 0.667 | 206 |
+  | v13 | 0.644 | 154 |
+
+  Every stage costs a little (−5.8, −1.7 and −2.3 points; each within noise, −10.3 ± 7.5 in total). The thinking
+  shrinks at every stage. See `PLAN_v14.md`.
 * **Lesson: an eval that matches the training distribution hides overfitting.** Every round after v12 looked like
   progress or a plateau on v2.x. Only a harder, differently built eval showed that the model had lost general
   capability.
