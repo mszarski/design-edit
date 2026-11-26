@@ -97,6 +97,42 @@ directly, because models learn to pad.
   * **Phase 3:** include the review turn in RL, rewarding the final patch.
   * **Ship the review round at inference** regardless; it costs one extra model call.
  hard training data (about $30–60 of API calls, plus about 1M agent tokens; 1 day)
+## Phase 1 pilot: DeepSeek-V4-Pro as writer (result)
+* **Writer mechanics:**
+  * V4-Pro on the router reasons until the token limit on these long prompts and returns nothing, even at
+    `reasoning_effort=low`, so it runs with reasoning off.
+  * Indented subtree inserts are converted into canonical `insert` lines.
+  * The repair round gets the screen and the patch rules.
+* **Yield:** 60 screens: 56 valid and 268 items written. 80 passed the gate (30%).
+* **Opus review of 48 gated items** (blind): 1 approved as-is, 17 approved after fixes, 30 rejected (62%). So about
+  7% of written items survive. The failures, in order:
+  1. false premises and off-system "fixes";
+  2. checks that pin one answer (ids of new nodes, `text=` on name-only labels, exact layer names, one value
+     where several are on-scale) or that silently do nothing (unknown keys);
+  3. trivial items labelled hard, or vague "mood" goals whose checks then pick one answer.
+* **Gate change:** `checks.check_problems` rejects checks the grader would ignore: unknown keys, node checks with
+  nothing to test, unknown `new_node` keys.
+* **Decision (with the user): C + B.** A smaller hard set (about 300 items) written by Opus agents and reviewed
+  blind, plus the existing realistic set re-checked under the v2.2 conventions. Opus writes the inputs and the
+  grader; Gemma is trained only on its own traces.
+
+## Phase 1C pilot: re-checking the realistic training set (result)
+* DeepSeek re-grading under the v2.2 conventions: 25 of 40 items pass the validator (62%). It dropped none.
+* **Blind Opus audit of those 25:**
+  * 13 good, 4 with a minor loophole, 7 too loose, 1 should be dropped.
+  * The split follows the request type. Concrete requests (an exact value, a token, disable, select) are fine.
+    **Vague requests ("stand out", "more subtle", "improve hierarchy") are too loose**: the checks test "changed",
+    not the direction or every instance. A policy could earn reward for opposite or one-instance changes.
+* **Use:** keep the concrete kinds (direct, state, consistency, structure) from this set. Take goal-type training
+  items only from the Opus-written hard set.
+* **Grader limits that matter for the RL reward** (fix in phase 3):
+  1. Judge checks count toward neither pass nor fail. Items whose key criterion is a judge check need a judge call
+     in the reward, or must be excluded.
+  2. Props a check doesn't name can change freely on "allowed" nodes, and new nodes are always allowed. Add a small
+     penalty per changed property that no check covers, sized so complete multi-part edits aren't punished.
+  3. Disable items should also require no opacity on the label, so opacity isn't stacked on the button and its label.
+
+## Phase 1: hard training data (original plan; see the pilot results above)
 - **Writer:** a script, not agents. It reuses `eval_v3/SPEC.md`, the conventions and `eval_v3/tool.py`'s gate, with
   DeepSeek-V4-Pro on the HF router as the writer.
   - The gate requires: the reference passes; an alternative passes; doing nothing fails; a trap fails the checks.
