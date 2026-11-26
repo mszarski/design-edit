@@ -137,9 +137,10 @@ def main() -> None:
     done = set(done_path.read_text().split()) if done_path.exists() else set()
     stats = {"screens": 0, "screen_fail": 0, "items": 0, "gated": 0, "repaired": 0}
 
-    def ask(prompt: str, max_tokens: int) -> str:
+    def ask(prompt: str, max_tokens: int, think: bool = True) -> str:
+        # The writer is a reasoning model: reasoning tokens count against max_tokens, so budgets are generous.
         return chat(args.writer, [{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.7,
-                    timeout=1200, retries=2)
+                    timeout=1800, retries=2, extra=None if think else {"reasoning": {"enabled": False}})
 
     def one_screen(i: int) -> None:
         sid = f"t{i:04d}"
@@ -153,7 +154,7 @@ def main() -> None:
         feedback, ok = "", False
         for _ in range(3):
             out = ask(SCREEN_PROMPT.format(system=SYSTEM_PROMPT, screen_spec=screen_spec, screen=screen, ds=ds)
-                      + feedback, 8000)
+                      + feedback, 12000, think=False)
             (work / "screens" / f"{sid}.dsl").write_text(strip_fences(out).strip() + "\n")
             try:
                 _, errs, _ = T.check_screen(sid)
@@ -171,7 +172,7 @@ def main() -> None:
         kinds = rng.sample(KINDS, args.items_per_screen)
         items = parse_json(ask(ITEM_PROMPT.format(
             spec=spec_text, conventions=conventions, check_spec=CHECK_SPEC, system=SYSTEM_PROMPT, ds=ds, sid=sid,
-            design=design, k=len(kinds), kinds=", ".join(kinds)), 16000))
+            design=design, k=len(kinds), kinds=", ".join(kinds)), 32000))
         gated = []
         for k, it in enumerate(items if isinstance(items, list) else []):
             iid = f"{sid}i{k}"
@@ -185,7 +186,7 @@ def main() -> None:
             except Exception as e:  # noqa: BLE001
                 errs = [f"{type(e).__name__}: {e}"]
             if errs:
-                fixed = parse_json(ask(REPAIR_PROMPT.format(errors="\n".join(errs), item=json.dumps(it, indent=1)), 6000))
+                fixed = parse_json(ask(REPAIR_PROMPT.format(errors="\n".join(errs), item=json.dumps(it, indent=1)), 16000))
                 if isinstance(fixed, dict):
                     fixed["screen_id"] = sid
                     path.write_text(json.dumps(fixed, indent=1))
