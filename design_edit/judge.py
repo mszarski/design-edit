@@ -33,7 +33,7 @@ Answer with one word: PASS or FAIL."""
 
 
 def chat(model: str, messages: list[dict], max_tokens: int = 16, temperature: float = 0.0,
-         base_url: str = ROUTER, token: str | None = None, retries: int = 4) -> str:
+         base_url: str = ROUTER, token: str | None = None, retries: int = 4, timeout: int = 120) -> str:
     token = token or os.environ["HF_TOKEN"]
     body = json.dumps({"model": model, "messages": messages, "max_tokens": max_tokens,
                        "temperature": temperature}).encode()
@@ -41,7 +41,7 @@ def chat(model: str, messages: list[dict], max_tokens: int = 16, temperature: fl
         req = urllib.request.Request(f"{base_url}/chat/completions", data=body, method="POST",
                                      headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.load(resp)["choices"][0]["message"]["content"] or ""
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError, KeyError):
             if attempt == retries - 1:

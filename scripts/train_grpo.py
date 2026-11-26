@@ -88,7 +88,11 @@ def main() -> None:
     ap.add_argument("--reward", choices=["reference", "rubric", "visual", "checks"], default="reference",
                     help="reference: match the labeled edit; rubric: LLM judge on goal prompts (no labels)")
     ap.add_argument("--judge-model", default="Qwen/Qwen3-235B-A22B-Instruct-2507")
-    ap.add_argument("--beta", type=float, default=0.0, help="KL coefficient")
+    ap.add_argument("--beta", type=float, default=0.0,
+                    help="KL coefficient. 0.01-0.02 keeps the policy (incl. its thinking length) near the start model")
+    ap.add_argument("--mask-truncated", action="store_true",
+                    help="drop completions cut off at --max-completion-length from the loss, so long careful "
+                         "reasoning isn't punished as a wrong answer (rounds through v13 shortened thinking)")
     ap.add_argument("--visual-judge", default="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8")
     ap.add_argument("--reward-version", type=int, default=1,
                     help="goal reward: 1 = judge + penalties; 2 = + full change list for the judge and teacher refs")
@@ -313,6 +317,7 @@ def main() -> None:
         temperature=1.0,
         beta=args.beta,                # 0 = no KL term; rely on the clipped objective
         loss_type="dapo",
+        mask_truncated_completions=args.mask_truncated,
         reward_weights=[1.0, 0.1],
         max_steps=args.max_steps,
         num_train_epochs=args.epochs,

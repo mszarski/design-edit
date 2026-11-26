@@ -58,6 +58,25 @@ system_audit and propagate, which need a full sweep of the screen.
   - phase 3 stops if thinking falls by more than 25%;
   - phase 3 runs both v3 dev and v2.2 dev at every checkpoint.
 
+## Encouraging thinking (applies to phases 2-3)
+Thinking shrank because four parts of the pipeline pushed against it. Remove those pressures; don't reward length
+directly, because models learn to pad.
+1. **SFT trace selection:** keep the median-length correct trace, not the shortest (`filter_traces.py --select`).
+   Prefer traces that show the procedure: rule → every affected instance → patch → check.
+2. **Tasks where thinking pays:** hard multi-part, propagating and audit items (phase 1). On v2-style local edits,
+   RL loses nothing by thinking less.
+3. **No truncation penalty in RL:**
+   - completion cap of at least 4,096 tokens;
+   - truncated completions masked out of the loss (`train_grpo.py --mask-truncated`);
+   - the loss is already token-level (`dapo`).
+4. **KL to the start model:** `--beta 0.01`–`0.02`. It was 0, so nothing held behaviour near the base.
+5. **Inference tests** on plain Gemma before any training (running):
+   - a checklist added to the system prompt (`eval_model.py --system-suffix checklist`);
+   - one review round (`--revise-rounds 1`).
+
+**Phase 1 writer and reviewer** (decided): DeepSeek-V4-Pro writes the screens and items
+(`scripts/write_hard_items.py`), and Opus agents review them blind, approving, fixing or rejecting each.
+
 ## Phase 1: hard training data (about $30–60 of API calls, plus about 1M agent tokens; 1 day)
 - **Writer:** a script, not agents. It reuses `eval_v3/SPEC.md`, the conventions and `eval_v3/tool.py`'s gate, with
   DeepSeek-V4-Pro on the HF router as the writer.

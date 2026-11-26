@@ -47,6 +47,12 @@ def bootstrap(dataset_repo: str) -> None:
     sys.path.insert(0, str(Path(path) / "code"))
 
 
+CHECKLIST = ("Before writing the patch, think it through: (1) restate what the request requires, including implied "
+             "consequences; (2) list every element on the screen it affects, checking repeated components one by one; "
+             "(3) note the design-system values that apply; (4) write the patch; (5) check the patch against your list "
+             "and the design system, and fix anything missed or changed unnecessarily.")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", required=True)
@@ -70,6 +76,8 @@ def main() -> None:
                     help="sample this many answers (temperature 0.8) and keep the one most samples agree on (vLLM)")
     ap.add_argument("--keep-special-tokens", action="store_true",
                     help="decode special tokens (needed to split Gemma 4 thinking from the answer)")
+    ap.add_argument("--system-suffix", default="",
+                    help="text appended to the system prompt (vLLM path); 'checklist' = the built-in CHECKLIST")
     ap.add_argument("--tag", default="", help="subfolder for the result files, e.g. 'think' (keeps runs apart)")
     ap.add_argument("--adapter", default=None,
                     help="LoRA adapter(s) to merge into --model first, as <repo>/<subfolder>, comma-separated to stack (SFT,RL)")
@@ -108,6 +116,11 @@ def main() -> None:
                                 skip_special_tokens=not args.keep_special_tokens)
 
         def generate(prompts):
+            if args.system_suffix == "checklist":
+                args.system_suffix = CHECKLIST
+            if args.system_suffix:  # extra instruction appended to the system message (inference-time prompt test)
+                prompts = [[{**m, "content": m["content"] + "\n\n" + args.system_suffix} if m["role"] == "system"
+                            else m for m in p] for p in prompts]
             if args.vote > 1:  # self-consistency over the applied results (design_edit.vote)
                 from design_edit.revise import _design_of
                 from design_edit.vote import vote
