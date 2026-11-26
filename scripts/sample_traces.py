@@ -66,6 +66,10 @@ def main() -> None:
     ap.add_argument("--temperature", type=float, default=0.8)
     ap.add_argument("--max-new-tokens", type=int, default=3072)
     ap.add_argument("--n", type=int, default=None)
+    ap.add_argument("--review", action="store_true",
+                    help="review episodes: after each sample, show the applied result (design_edit.revise.review_message, "
+                         "as eval_model.py --revise-rounds 1 does) and sample one review answer")
+    ap.add_argument("--max-model-len", type=int, default=8192)
     ap.add_argument("--template-kwargs", default='{"enable_thinking": true}')
     ap.add_argument("--hint", action="store_true",
                     help="reference-guided rationalization (STaR): show the reference answer as a hint; the kept "
@@ -99,7 +103,7 @@ def main() -> None:
         from design_edit.lora import merge_adapter
 
         model = merge_adapter(args.model, args.adapter, "/tmp/merged")
-    llm = LLM(model=model, dtype="bfloat16", max_model_len=8192, gpu_memory_utilization=0.92,
+    llm = LLM(model=model, dtype="bfloat16", max_model_len=args.max_model_len, gpu_memory_utilization=0.92,
               limit_mm_per_prompt={"image": 0})
     params = SamplingParams(n=args.k, temperature=args.temperature, top_p=0.95, max_tokens=args.max_new_tokens,
                             skip_special_tokens=False, seed=0)
@@ -110,12 +114,29 @@ def main() -> None:
             batch = ds.select(range(start, min(start + 512, len(ds))))
             prompts = [hinted(r) if args.hint else r["prompt"] for r in batch]
             outs = llm.chat(prompts, params, chat_template_kwargs=tkw, use_tqdm=False)
+            reviews = None
+            if args.review:
+                from design_edit.revise import review_message
+                from design_edit.schema import strip_fences
+
+                one = SamplingParams(n=1, temperature=args.temperature, top_p=0.95, max_tokens=args.max_new_tokens,
+                                     skip_special_tokens=False, seed=1)
+                convs = [p + [{"role": "assistant", "content": strip_fences(c.text)},
+                              {"role": "user", "content": review_message(p, c.text)}]
+                         for p, o in zip(prompts, outs) for c in o.outputs]
+                flat = llm.chat(convs, one, chat_template_kwargs=tkw, use_tqdm=False)
+                reviews = [flat[k * args.k:(k + 1) * args.k] for k in range(len(outs))]
             for j, (r, o) in enumerate(zip(batch, outs)):
                 samples = []
-                for c in o.outputs:
+                for m, c in enumerate(o.outputs):
                     s = score(r["before"], r["after"], c.text, r.get("relax"), r.get("alts"))
-                    samples.append({"text": c.text, "finished": c.finish_reason == "stop", "valid": s.valid,
-                                    "exact": s.exact, "f1": round(s.f1, 4), "tokens": len(c.token_ids)})
+                    smp = {"text": c.text, "finished": c.finish_reason == "stop", "valid": s.valid,
+                           "exact": s.exact, "f1": round(s.f1, 4), "tokens": len(c.token_ids)}
+                    if reviews is not None:
+                        rv = reviews[j][m].outputs[0]
+                        smp |= {"review_text": rv.text, "review_finished": rv.finish_reason == "stop",
+                                "review_tokens": len(rv.token_ids)}
+                    samples.append(smp)
                 f.write(json.dumps({"index": index[start + j],
                                     "instruction": r["instruction"], "before": r["before"], "kind": r["kind"],
                                     "samples": samples}) + "\n")
