@@ -90,6 +90,9 @@ def main() -> None:
     ap.add_argument("--judge-model", default="Qwen/Qwen3-235B-A22B-Instruct-2507")
     ap.add_argument("--beta", type=float, default=0.0,
                     help="KL coefficient. 0.01-0.02 keeps the policy (incl. its thinking length) near the start model")
+    ap.add_argument("--geometry", action="store_true",
+                    help="checks reward: render before/after in Chromium (design_edit.geometry) and treat new clipping, "
+                         "overlap, text overflow or off-page content as failing; -0.05 per new issue (max 4)")
     ap.add_argument("--mask-truncated", action="store_true",
                     help="drop completions cut off at --max-completion-length from the loss, so long careful "
                          "reasoning isn't punished as a wrong answer (rounds through v13 shortened thinking)")
@@ -135,8 +138,8 @@ def main() -> None:
     import time
     import urllib.request
 
-    if args.reward == "visual":
-        # The visual reward renders designs: install Chromium (and its system libraries) into the job image.
+    if args.reward == "visual" or args.geometry:
+        # The visual reward and --geometry render designs: install Chromium (and its system libraries) into the job image.
         subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"], check=True)
     server = None
     if args.vllm_server:
@@ -210,9 +213,20 @@ def main() -> None:
             t = text_of(c)
             if ch:
                 g = grade_checks(b, t, ch, al, ds or None)
+                if not g["valid"]:
+                    out.append(-0.5)
+                    continue
+                ok, n_new = g["pass"], 0
+                if args.geometry:  # rendered layout problems the edit introduced (what designers see go wrong)
+                    try:
+                        bd = parse(b)
+                        n_new = len(_renderer().new_issues(bd, apply_patch(bd, t)))
+                    except Exception as e:  # noqa: BLE001  a render failure must not kill the step
+                        print(f"geometry error: {type(e).__name__}: {e}", flush=True)
+                    ok = ok and n_new == 0
                 # mostly pass/fail, a little partial credit: partial credit alone paid for edits that fixed one
                 # instance out of several (plan v14 audit)
-                out.append(0.7 * float(g["pass"]) + 0.3 * g["score"] if g["valid"] else -0.5)
+                out.append(0.7 * float(ok) + 0.3 * g["score"] - 0.05 * min(n_new, 4))
             else:
                 s_ = score(b, a, t, r)
                 out.append(0.5 * s_.f1 + 0.5 * float(s_.exact) if s_.valid else -0.5)

@@ -85,6 +85,9 @@ def main() -> None:
     ap.add_argument("--cache", default="eval_v2_judge_cache.json")
     ap.add_argument("--save", default=None, help="write per-row grades here (JSON)")
     ap.add_argument("--show-checks", action="store_true", help="tell the judge the deterministic check result")
+    ap.add_argument("--geometry", action="store_true",
+                    help="render before/after (Chromium) and report answers that introduce clipping, overlap, text "
+                         "overflow or off-page content; 'pass_geo' = pass and no new layout issue")
     args = ap.parse_args()
     from datasets import load_dataset
 
@@ -117,6 +120,22 @@ def main() -> None:
                 "det_score": round(sum(g["det_score"] for g in det) / len(det), 3),
                 "judge_pass_same_items": round(sum(g["pass"] for g in det) / len(det), 3),
                 "agreement": round(sum(g["det_pass"] == g["pass"] for g in det) / len(det), 3), "n_det": len(det)}
+        if args.geometry:
+            from design_edit.geometry import Renderer
+
+            with Renderer() as R:
+                for r, g, out in zip(rows, grades, outs):
+                    if g["pass"] is None:
+                        continue
+                    try:
+                        b = parse(r["before"])
+                        g["geo_new"] = sorted(R.new_issues(b, apply_patch(b, strip_fences(out).strip())))
+                    except Exception:  # noqa: BLE001  invalid patches are already failed
+                        g["geo_new"] = []
+            gg = [g for g in grades if g["pass"] is not None]
+            report[name]["ALL"] |= {
+                "geo_issue_rate": round(sum(bool(g.get("geo_new")) for g in gg) / len(gg), 3),
+                "pass_geo": round(sum(bool(g["pass"]) and not g.get("geo_new") for g in gg) / len(gg), 3)}
         if args.save:
             Path(args.save.replace(".json", f"_{name}.json")).write_text(json.dumps(grades, indent=1))
         print(name, json.dumps(report[name]["ALL"]), flush=True)

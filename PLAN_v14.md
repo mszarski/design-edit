@@ -132,6 +132,21 @@ directly, because models learn to pad.
 * **Screen gate fix:** numeric properties must be numbers. The fix rejects `size=w:80,h:20`-style screens that
   DeepSeek wrote and that the old gate let through.
 
+## Rendered geometry checks (after re-reading Figma's post)
+The post combines structural checks with visual judges, and its example failures are overlapping and clipped
+elements. Our checks read the DSL, not the rendered page, so they couldn't see those failures.
+`design_edit.geometry.Renderer` renders before and after in Chromium (about 20 ms per design). It reports new
+clipping, sibling overlap, text overflow and off-page content.
+* **References are almost always clean.** New issues come from 4% of eval-v3 references, 4% of hard training
+  references, 0% of concrete ones and 8% of Flash ones. RL leaves out the items whose reference introduces an issue.
+* **RL reward** (`train_grpo.py --geometry`): an answer that introduces an issue can't pass, and each new issue costs
+  −0.05 (up to 4).
+* **Eval** (`grade_eval_v2.py --geometry`): reports the share of answers that add issues, and `pass_geo` (passes and
+  adds none). On v3, 3–4.5% of answers add issues; pass_geo is 2–4 points below pass (plain Gemma with review
+  0.845, Qwen 0.727).
+* **A VLM visual judge** (`visual_judge.py`, built in round 7) is an option for eval spot checks. It's too slow and
+  costly per RL rollout.
+
 ## Phase 2 result: SFT on plain Gemma's own review episodes does not add capability
 
 | | eval v3 single pass | eval v3 + review round | eval v2.2 | thinking (median words) |
