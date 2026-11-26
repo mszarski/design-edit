@@ -186,8 +186,14 @@ clipping, sibling overlap, text overflow and off-page content.
   losses, most fail "Nothing unrelated to the request changes". Seeing the rendered page, the model "polishes" what it
   notices, for example shrinking a title to improve "vertical balance" or snapping nearby values. The screenshot
   invites over-editing.
-* **Possible fix to test:** tell the review turn to judge the screenshot only for problems the patch caused, and not to
-  touch anything the request didn't ask for. Until that is shown to help, the review round stays text-only.
+* **Retry with a stricter prompt** (judge the screenshot only for problems the patch caused; leave pre-existing details
+  alone):
+  * Overall 0.845 against 0.874 text-only: −2.9 ± 5.1 (+8/−13), dev −6.9, test +1.1.
+  * "Nothing unrelated" failures fell from 18 to 7 (text-only: 8), so the over-editing is fixed.
+  * It's a trade-off: multi_step 0.912 against 0.794, but system_audit 0.600 against 0.867 (exact values aren't
+    visible) and structure 0.763 against 0.895.
+* **Decision:** the review round stays text-only. Revisit the screenshot after RL, or in two-turn RL where the model
+  can learn when to trust it.
 
 ## Phase 2 result: SFT on plain Gemma's own review episodes does not add capability
 
