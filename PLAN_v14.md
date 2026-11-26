@@ -147,6 +147,34 @@ clipping, sibling overlap, text overflow and off-page content.
 * **A VLM visual judge** (`visual_judge.py`, built in round 7) is an option for eval spot checks. It's too slow and
   costly per RL rollout.
 
+## Visual judge calibration (60 eval-v3 answers, Opus labels from screenshots)
+* **Setup:** 30 answers that passed text grading and 30 that failed, from plain Gemma with review, Qwen and v14.
+  Each has before and after screenshots, 2x close-ups and a list of every change. Opus labelled each blind to the
+  text grade: 43 acceptable, 17 not.
+* **Vision judges, agreement with Opus on "acceptable":**
+
+  | judge | agreement | accepts bad (of 17) | rejects good |
+  |---|---|---|---|
+  | Kimi-K3.1-Pro | 0.763 | 11 | 3 |
+  | DeepSeek-V4.1-Flash | 0.754 | 10 | 4 |
+  | Mistral-Large-4 | 0.746 | 12 | 3 |
+  | Muse-Spark-Open | 0.733 | 10 | 6 |
+  | Llama-4-Maverick | 0.559 | 5 | 21 |
+
+* **The vision judges catch few of the bad edits** (6–7 of 17). The bad edits Opus found are mostly related text left
+  stale (a counter or label the edit made wrong), unrequested changes and misplaced elements. Screenshots don't
+  make those obvious to a VLM. Clipping and overlap are already covered by the geometry check.
+* **The text grading agrees with Opus 72% of the time,** about as well as the best vision judge.
+  * Of 30 text passes, Opus rejects only 2.
+  * Of 30 text failures, Opus accepts 15. Many of those 15 fail on details a screenshot hides (an exact price, a
+    label, #71717A against a near-identical grey); in those cases the text grading is right to be strict.
+  * The rest are strict-but-debatable criteria: renumbering questions after a reorder, and "nothing unrelated
+    changes".
+* **Decision:**
+  * Add a vision judge (Kimi-K3.1-Pro or DeepSeek-V4.1-Flash) as an extra eval column, `--visual`.
+  * Keep it out of the RL reward: at about 75% agreement it adds little beyond the exact checks and the geometry.
+  * The visual lever worth testing is the model seeing its own screenshot in the review round (running).
+
 ## Phase 2 result: SFT on plain Gemma's own review episodes does not add capability
 
 | | eval v3 single pass | eval v3 + review round | eval v2.2 | thinking (median words) |
