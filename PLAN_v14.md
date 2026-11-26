@@ -132,6 +132,23 @@ directly, because models learn to pad.
 * **Screen gate fix:** numeric properties must be numbers. The fix rejects `size=w:80,h:20`-style screens that
   DeepSeek wrote and that the old gate let through.
 
+## Phase 2 result: SFT on plain Gemma's own review episodes does not add capability
+
+| | eval v3 single pass | eval v3 + review round | eval v2.2 | thinking (median words) |
+|---|---|---|---|---|
+| plain Gemma, thinking | **0.747** | **0.874** (dev 0.897) | 0.861 | 350 single / 513 review |
+| **v14 SFT** (3,396 rows; LoRA from plain Gemma) | 0.686 | 0.834 (dev 0.828) | 0.864 | 276 single / 487 review |
+| v13 (old pipeline) | 0.644 | – | 0.957 | 154 |
+
+* **Paired against plain Gemma:** single pass −6.3 ± 6.4 (+11/−22); with a review round −4.0 ± 5.8 (+10/−17).
+  On v2.2 it is level (0.864 against 0.861). Better than v13 on v3 (+4.0 ± 7.4), but not significantly.
+* **Thinking still shrank by 21% in a single pass,** although traces were the median length. Most rows came from
+  easy concrete items, where Gemma thinks about 60 words.
+* **Goal requests lose most** (0.971 → 0.829 with review); structure gains in a single pass (0.763 → 0.821).
+* **Conclusion:** fine-tuning on the model's own correct traces does not improve on the model. Here it costs a
+  little, as it did in round 12 (+1 ± 3 there). The gains in this project came from RL (+8 points in round 12) and
+  from the review round at inference (+12.6). Next: RL directly from plain Gemma, skipping SFT.
+
 ## Flash batch: cheap DeepSeek items vetted by check-vs-judge disagreement (result)
 * **V4.1-Flash with thinking:** 140 screens, 579 items through the gate (about 83%). Plain Gemma sampled 4 review
   episodes per item; each final answer was graded by the exact checks and by the LLM judge on the criteria.
