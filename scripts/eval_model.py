@@ -82,7 +82,10 @@ def review_content(prompt: list, output: str):
         imgs.append(zoom)
     note = ("\n\nAttached: a screenshot of the design after your patch" +
             (" and a 2x close-up of the edited area." if zoom else ".") +
-            " Check it the way a designer would: alignment, spacing, clipping, overlap, legibility.")
+            " Use it only to check what YOUR PATCH did: is the request fully done, and did the patch itself cause "
+            "anything to break (clipping, overlap, misalignment, unreadable text)? Do not fix or polish anything "
+            "else you notice on the page: pre-existing details the request didn't ask about must stay exactly as "
+            "they are, even if you would design them differently.")
     return [{"type": "text", "text": text + note}] + [
         {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(b).decode()}}
         for b in imgs]
