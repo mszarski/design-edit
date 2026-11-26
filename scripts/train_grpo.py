@@ -201,7 +201,7 @@ def main() -> None:
     from design_edit.checks import grade_checks
 
     def checks_reward(completions, before, after, relax, **kw):
-        """CADGenBench-style: no-op-renormalized keep-in/keep-out score where the row has checks, else
+        """0.7 * pass + 0.3 * no-op-renormalized keep-in/keep-out/lint score where the row has checks, else
         exact/F1 against the reference; an invalid patch costs -0.5."""
         checks, allowed = kw.get("checks") or [""] * len(before), kw.get("allowed") or [""] * len(before)
         dss = kw.get("design_system") or [None] * len(before)  # lint follows each item's own design system
@@ -210,7 +210,9 @@ def main() -> None:
             t = text_of(c)
             if ch:
                 g = grade_checks(b, t, ch, al, ds or None)
-                out.append(g["score"] if g["valid"] else -0.5)
+                # mostly pass/fail, a little partial credit: partial credit alone paid for edits that fixed one
+                # instance out of several (plan v14 audit)
+                out.append(0.7 * float(g["pass"]) + 0.3 * g["score"] if g["valid"] else -0.5)
             else:
                 s_ = score(b, a, t, r)
                 out.append(0.5 * s_.f1 + 0.5 * float(s_.exact) if s_.valid else -0.5)
