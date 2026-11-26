@@ -106,8 +106,19 @@ def _eval_check(c: dict[str, Any], before: Node, after: Node) -> bool | None:
                 continue
             if spec.get("parent") and not _in_subtree(after, spec["parent"], n["id"]):
                 continue
-            if _node_matches(n, spec):
-                return True
+            if not _node_matches(n, spec):
+                continue
+            # optional position: directly after / before an existing sibling ({"after": "n12"} or {"before": "n12"})
+            if "after" in c or "before" in c:
+                if parent is None:
+                    continue
+                ids = [ch["id"] for ch in parent["children"]]
+                k = ids.index(n["id"])
+                if "after" in c and not (k > 0 and ids[k - 1] == c["after"]):
+                    continue
+                if "before" in c and not (k + 1 < len(ids) and ids[k + 1] == c["before"]):
+                    continue
+            return True
         return False
     if "order" in c:
         ids = c["order"]
@@ -161,16 +172,18 @@ def keep_out(before: Node, after: Node, allowed: list[str]) -> tuple[float, list
     return max(0.0, 1 - len(bad) / 3), bad
 
 
-def _raw(before: Node, after: Node, checks: list[dict], allowed: list[str]) -> tuple[float, float, float, list]:
+def _raw(before: Node, after: Node, checks: list[dict], allowed: list[str], ds: str | None = None) -> tuple[float, float, float, list]:
     det = [(c, eval_check(c, before, after)) for c in checks]
     det = [(c, v) for c, v in det if v is not None]
     kin = sum(v for _, v in det) / len(det) if det else 1.0
     kout, bad = keep_out(before, after, allowed)
-    nolint = 0.0 if set(lint(after)) - set(lint(before)) else 1.0
+    nolint = 0.0 if set(lint(after, ds)) - set(lint(before, ds)) else 1.0
     return 0.6 * kin + 0.3 * kout + 0.1 * nolint, kin, kout, [c for c, v in det if not v] + bad
 
 
-def grade_checks(before: Node | str, patch_text: str, checks: list[dict] | str, allowed: list[str] | str) -> dict:
+def grade_checks(before: Node | str, patch_text: str, checks: list[dict] | str, allowed: list[str] | str,
+                 ds: str | None = None) -> dict:
+    """ds: the item's design-system text, so lint allows its own type scale and disabled colors."""
     before = parse(before) if isinstance(before, str) else before
     checks = json.loads(checks) if isinstance(checks, str) else checks
     allowed = json.loads(allowed) if isinstance(allowed, str) else allowed
@@ -181,8 +194,8 @@ def grade_checks(before: Node | str, patch_text: str, checks: list[dict] | str, 
     if dsl_violations(before, after):
         return {"valid": False, "score": 0.0, "pass": False, "keep_in": 0.0, "keep_out": 0.0,
                 "why": "not in the design language"}
-    raw, kin, kout, failed = _raw(before, after, checks, allowed)
-    noop, *_ = _raw(before, before, checks, allowed)
+    raw, kin, kout, failed = _raw(before, after, checks, allowed, ds)
+    noop, *_ = _raw(before, before, checks, allowed, ds)
     score = max(0.0, (raw - noop) / (1 - noop)) if noop < 1 else 0.0
     return {"valid": True, "score": round(score, 4), "pass": kin == 1.0 and kout == 1.0, "keep_in": round(kin, 4),
             "keep_out": round(kout, 4), "why": "; ".join(map(str, failed))[:300]}

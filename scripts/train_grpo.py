@@ -200,11 +200,12 @@ def main() -> None:
         """CADGenBench-style: no-op-renormalized keep-in/keep-out score where the row has checks, else
         exact/F1 against the reference; an invalid patch costs -0.5."""
         checks, allowed = kw.get("checks") or [""] * len(before), kw.get("allowed") or [""] * len(before)
+        dss = kw.get("design_system") or [None] * len(before)  # lint follows each item's own design system
         out = []
-        for c, b, a, r, ch, al in zip(completions, before, after, relax, checks, allowed):
+        for c, b, a, r, ch, al, ds in zip(completions, before, after, relax, checks, allowed, dss):
             t = text_of(c)
             if ch:
-                g = grade_checks(b, t, ch, al)
+                g = grade_checks(b, t, ch, al, ds or None)
                 out.append(g["score"] if g["valid"] else -0.5)
             else:
                 s_ = score(b, a, t, r)

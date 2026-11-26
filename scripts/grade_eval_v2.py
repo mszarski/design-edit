@@ -34,7 +34,8 @@ def grade_row(row: dict, output: str, cache: dict, judge: str, show_checks: bool
     if row.get("checks"):  # deterministic keep-in/keep-out grade (design_edit.checks), where the item has one
         from design_edit.checks import grade_checks
 
-        d = grade_checks(row["before"], strip_fences(output).strip(), row["checks"], row["allowed"])
+        d = grade_checks(row["before"], strip_fences(output).strip(), row["checks"], row["allowed"],
+                         row.get("design_system"))
     note = ""
     if show_checks and d and d["valid"]:
         note = ("Automatic structural checks (exact, but they encode one reading of the request and can be stricter "

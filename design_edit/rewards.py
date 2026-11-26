@@ -169,17 +169,32 @@ def contrast(fg: str, bg: str) -> float:
     return (a + 0.05) / (b + 0.05)
 
 
-def lint(doc: Node) -> list[str]:
-    """Design-rule violations: things a designer would flag in review."""
+def ds_allowances(ds_text: str | None) -> tuple[set[int], set[str]]:
+    """Type sizes and low-contrast-by-design text colors (disabled text) that an item's design system defines."""
+    if not ds_text:
+        return set(), set()
+    sizes = {int(a) for a in re.findall(r"\b(\d{1,2})/\d{3}\b", ds_text)}
+    colors = {c.upper() for c in re.findall(r"disabled text (#[0-9A-Fa-f]{6})", ds_text)}
+    colors |= {c.upper() for c in re.findall(r"label color=(#[0-9A-Fa-f]{6})(?=[^;]*$)", ds_text.split("disabled =")[-1])}
+    return sizes, colors
+
+
+def lint(doc: Node, ds_text: str | None = None) -> list[str]:
+    """Design-rule violations: things a designer would flag in review.
+
+    With the item's design system (ds_text), its own type scale and its disabled-text color are allowed, so an answer
+    that follows the system is not penalized. Frames and rects both count as backgrounds for their children."""
     issues: list[str] = []
+    sizes, low_ok = ds_allowances(ds_text)
 
     def rec(node: Node, bg: str) -> None:
         p = node["props"]
-        fill = p.get("fill", bg) if node["type"] == "frame" else bg
+        fill = p.get("fill", bg) if node["type"] in ("frame", "rect") else bg
         if node["type"] == "text":
-            if isinstance(p.get("color"), str) and contrast(p["color"], bg) < 3.0:
+            col = p.get("color")
+            if isinstance(col, str) and col.upper() not in low_ok and contrast(col, bg) < 3.0:
                 issues.append(f"contrast:{node['id']}")
-            if p.get("size") not in g.TYPE_SCALE:
+            if p.get("size") not in g.TYPE_SCALE and p.get("size") not in sizes:
                 issues.append(f"type_scale:{node['id']}")
         for key in ("gap", "pad"):
             v = p.get(key)

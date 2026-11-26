@@ -291,3 +291,19 @@ def test_check_any_accepts_either_alternative():
     c = {"any": [{"node": "n2", "prop": "text", "eq": "Pending"}, {"node": "n2", "prop": "name", "eq": "Pending"}]}
     assert eval_check(c, before, apply_patch(before, 'set n2 text="Pending"')) is True
     assert eval_check(c, before, before) is False
+
+
+def test_new_node_position_and_ds_aware_lint():
+    from design_edit.checks import eval_check
+    from design_edit.rewards import lint
+    from design_edit.schema import apply_patch, parse
+
+    before = parse('frame#n1 "Page" layout=col\n  text#n2 "A" size=14\n  text#n3 "B" size=14')
+    after = apply_patch(before, 'insert n1 1 text#n9 "New" size=14')
+    spec = {"new_node": {"parent": "n1", "type": "text"}}
+    assert eval_check({**spec, "after": "n2"}, before, after) is True
+    assert eval_check({**spec, "before": "n3"}, before, after) is True
+    assert eval_check({**spec, "after": "n3"}, before, after) is False
+    doc = parse('frame#n1 "Page" layout=col\n  text#n2 "A" size=15 color=#94A3B8')
+    ds = "Type scale (size/weight): heading 24/700, body 15/400. Colors: disabled text #94A3B8, page #FFFFFF."
+    assert lint(doc) and not lint(doc, ds)

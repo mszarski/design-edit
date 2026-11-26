@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rejection sampling: turn sampled thinking traces (sample_traces.py) into reasoning-SFT rows.
 
-For each request, keep the shortest trace that finished and whose patch is correct: an exact match to the reference
+For each request, keep one trace (by default the median-length one; see --select) that finished and whose patch is correct: an exact match to the reference
 (rewards.score, incl. relax/alts), or, for rows with deterministic checks (compile_checks.py), a passing grade, so a
 valid alternative to the reference also counts. Requests with no correct trace are dropped (RL can pick them up).
 
@@ -34,7 +34,10 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--reject-hint-leak", action="store_true",
                     help="for --hint traces: drop any whose text mentions the hint (it is trained without one)")
-    ap.add_argument("--max-tokens", type=int, default=2500, help="drop traces longer than this")
+    ap.add_argument("--max-tokens", type=int, default=4096, help="drop traces longer than this")
+    ap.add_argument("--select", choices=["median", "longest", "shortest"], default="median",
+                    help="which correct trace to keep. 'shortest' (used through v13) trains the model to think less, "
+                         "which cost it badly on the harder eval v3")
     args = ap.parse_args()
     if args.dataset.endswith(".jsonl"):
         rows = [json.loads(line) for line in open(args.dataset)]
@@ -61,7 +64,8 @@ def main() -> None:
                 if s["finished"] and "<channel|>" in s["text"] and s["tokens"] <= args.max_tokens:
                     good.append(s)
         if good:
-            best = min(good, key=lambda s: s["tokens"])
+            good.sort(key=lambda s: s["tokens"])
+            best = {"shortest": good[0], "longest": good[-1], "median": good[(len(good) - 1) // 2]}[args.select]
             lengths.append(best["tokens"])
             out.append({**{k: r.get(k, "") for k in KEEP},
                         "completion": [{"role": "assistant", "content": best["text"].strip()}]})

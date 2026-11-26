@@ -179,6 +179,13 @@ def main() -> None:
         result = evaluate(ds, generate, batch_size=args.batch)
         print(f"\n=== {split} (n={len(ds)}) ===\n{format_report(result)}", flush=True)
         overall[split] = result["overall"]
+        # length statistics: shrinking thinking or patches across training rounds is an early warning (eval v3)
+        outs = [r.get("output", "") for r in result.get("rows", [])]
+        if outs:
+            think = sorted(len(o.rsplit("<channel|>", 1)[0].split()) if "<channel|>" in o else 0 for o in outs)
+            lines = sorted(len(o.rsplit("<channel|>", 1)[-1].strip().splitlines()) for o in outs)
+            overall[split] |= {"think_words_median": think[len(think) // 2], "patch_lines_median": lines[len(lines) // 2],
+                               "empty": sum(1 for o in outs if not o.rsplit("<channel|>", 1)[-1].strip())}
         path = f"eval_{split}.json"
         Path(path).write_text(json.dumps(result, indent=1))
         if not args.no_push:
