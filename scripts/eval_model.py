@@ -11,6 +11,7 @@
 #     "peft>=0.17",
 #     "kernels",
 #     "flash-linear-attention",
+#     "playwright",
 # ]
 # ///
 """Score a Hub model (e.g. the SFT checkpoint) on one or more dataset splits, greedy decoding.
@@ -47,6 +48,46 @@ def bootstrap(dataset_repo: str) -> None:
     sys.path.insert(0, str(Path(path) / "code"))
 
 
+_RENDERER = None
+ARGS = None
+
+
+def review_content(prompt: list, output: str):
+    """The review message; with --review-image also the rendered result (screenshot + close-up of the edit)."""
+    from design_edit.revise import _design_of, review_message
+
+    text = review_message(prompt, output)
+    if not ARGS.review_image:
+        return text
+    import base64
+
+    from design_edit.goal_reward import focus_node
+    from design_edit.schema import apply_patch, parse, strip_fences
+
+    global _RENDERER
+    if _RENDERER is None:
+        from design_edit.geometry import Renderer
+
+        _RENDERER = Renderer().__enter__()
+    design = _design_of(prompt)
+    try:
+        before = parse(design)
+        after = apply_patch(before, strip_fences(output).strip())
+    except Exception:  # noqa: BLE001  the text already explains the failure
+        return text
+    imgs = [_RENDERER.screenshot(after)]
+    fid = focus_node(before, after)
+    zoom = _RENDERER.crop(after, fid) if fid else None
+    if zoom:
+        imgs.append(zoom)
+    note = ("\n\nAttached: a screenshot of the design after your patch" +
+            (" and a 2x close-up of the edited area." if zoom else ".") +
+            " Check it the way a designer would: alignment, spacing, clipping, overlap, legibility.")
+    return [{"type": "text", "text": text + note}] + [
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(b).decode()}}
+        for b in imgs]
+
+
 CHECKLIST = ("Before writing the patch, think it through: (1) restate what the request requires, including implied "
              "consequences; (2) list every element on the screen it affects, checking repeated components one by one; "
              "(3) note the design-system values that apply; (4) write the patch; (5) check the patch against your list "
@@ -76,12 +117,21 @@ def main() -> None:
                     help="sample this many answers (temperature 0.8) and keep the one most samples agree on (vLLM)")
     ap.add_argument("--keep-special-tokens", action="store_true",
                     help="decode special tokens (needed to split Gemma 4 thinking from the answer)")
+    ap.add_argument("--review-image", action="store_true",
+                    help="review rounds also show the rendered result: a screenshot of the edited design and a 2x "
+                         "close-up of the edited area (Chromium), so the model can see what its patch looks like")
     ap.add_argument("--system-suffix", default="",
                     help="text appended to the system prompt (vLLM path); 'checklist' = the built-in CHECKLIST")
     ap.add_argument("--tag", default="", help="subfolder for the result files, e.g. 'think' (keeps runs apart)")
     ap.add_argument("--adapter", default=None,
                     help="LoRA adapter(s) to merge into --model first, as <repo>/<subfolder>, comma-separated to stack (SFT,RL)")
     args = ap.parse_args()
+    global ARGS
+    ARGS = args
+    if args.review_image:  # render screenshots in the job: install Chromium and its system libraries
+        import subprocess
+
+        subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"], check=True)
     bootstrap(args.dataset)
 
     out_repo, out_prefix, model_path = args.model, (args.tag + "/" if args.tag else ""), args.model
@@ -110,7 +160,7 @@ def main() -> None:
         from vllm import LLM, SamplingParams
 
         llm = LLM(model=model_path, dtype="bfloat16", max_model_len=args.max_model_len, gpu_memory_utilization=0.9,
-                  limit_mm_per_prompt={"image": 0})
+                  limit_mm_per_prompt={"image": 2 if args.review_image else 0})
         # Keep special tokens so channel-style reasoning (Gemma 4 thinking) stays separable from the answer.
         params = SamplingParams(temperature=0.0, max_tokens=args.max_new_tokens,
                                 skip_special_tokens=not args.keep_special_tokens)
@@ -144,7 +194,7 @@ def main() -> None:
                 from design_edit.revise import review_message
 
                 convs = [p + [{"role": "assistant", "content": strip_fences(t)},
-                              {"role": "user", "content": review_message(p, t)}] for p, t in zip(prompts, texts)]
+                              {"role": "user", "content": review_content(p, t)}] for p, t in zip(prompts, texts)]
                 outs = llm.chat(convs, params, chat_template_kwargs=tkw, use_tqdm=False)
                 revised = [o.outputs[0].text for o in outs]
                 # a revision that comes back empty (e.g. reasoning ran out of tokens) keeps the previous answer
