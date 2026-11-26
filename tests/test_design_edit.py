@@ -318,3 +318,13 @@ def test_check_all_inside_any():
                  {"node": "n2", "prop": "color", "eq": "#FF0000"}]}
     assert eval_check(c, before, apply_patch(before, "set n2 size=18 weight=600")) is True
     assert eval_check(c, before, apply_patch(before, "set n2 size=18")) is False
+
+
+def test_check_problems_flags_inert_checks():
+    from design_edit.checks import check_problems
+
+    assert check_problems({"node": "n5", "unchanged": True})
+    assert check_problems({"new_node": {"parent": "n1", "text": "Hi"}})
+    assert check_problems({"node": "n5", "prop": "fill", "eq": "#FFFFFF", "child_of": "n2"})
+    assert not check_problems({"any": [{"node": "n5", "prop": "fill", "eq": "#FFFFFF"},
+                                       {"new_node": {"parent": "n1", "text_contains": "Hi"}, "after": "n3"}]})

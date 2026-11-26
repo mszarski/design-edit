@@ -67,6 +67,50 @@ def _node_matches(n: Node, spec: dict[str, Any]) -> bool:
     return True
 
 
+_TOP = {"judge", "all", "any", "deleted", "exists", "node", "new_node", "order", "same", "count"}
+_NODE_SPEC = {"type", "text_contains", "name_contains", "props", "parent"}
+
+
+def check_problems(c: Any, path: str = "check") -> list[str]:
+    """Checks the grader would silently ignore or misread (unknown keys, a node check with nothing to test).
+
+    eval_check skips unknown keys, so a misspelled or invented key makes a check pass vacuously; authoring gates
+    (eval_v3/tool.py) reject such checks."""
+    if not isinstance(c, dict):
+        return [f"{path}: not an object"]
+    kind = [k for k in c if k in _TOP]
+    if len(kind) != 1:
+        return [f"{path}: needs exactly one of {sorted(_TOP)}, got keys {sorted(c)}"]
+    k, out = kind[0], []
+    allowed = {k}
+    if k in ("all", "any"):
+        if not isinstance(c[k], list) or not c[k]:
+            return [f"{path}: '{k}' needs a non-empty list"]
+        for j, x in enumerate(c[k]):
+            out += check_problems(x, f"{path}.{k}[{j}]")
+    elif k == "node":
+        allowed |= {"prop", "parent", *_OPS}
+        if "prop" in c and not any(op in c for op in _OPS):
+            out.append(f"{path}: node+prop check has no operator ({', '.join(_OPS)})")
+        if "prop" not in c and "parent" not in c:
+            out.append(f"{path}: node check needs 'prop' (+ an operator) or 'parent'; it tests nothing")
+    elif k == "new_node":
+        allowed |= {"after", "before"}
+        bad = set(c["new_node"]) - _NODE_SPEC if isinstance(c["new_node"], dict) else {"<not an object>"}
+        if bad:
+            out.append(f"{path}: new_node has unknown keys {sorted(bad)} (allowed {sorted(_NODE_SPEC)})")
+    elif k == "same":
+        allowed |= {"props"}
+    elif k == "count":
+        allowed |= set(_OPS)
+        if not any(op in c for op in _OPS):
+            out.append(f"{path}: count check has no operator")
+    extra = set(c) - allowed
+    if extra:
+        out.append(f"{path}: unknown keys {sorted(extra)} (ignored by the grader)")
+    return out
+
+
 def eval_check(c: dict[str, Any], before: Node, after: Node) -> bool | None:
     """True/False for a deterministic check, None for a judge-only check or one this grader can't read.
 

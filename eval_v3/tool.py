@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from design_edit.checks import eval_check, grade_checks  # noqa: E402
+from design_edit.checks import check_problems, eval_check, grade_checks  # noqa: E402
 from design_edit.design_system import render_design_system, sample_design_system  # noqa: E402
 from design_edit.leak import dsl_violations  # noqa: E402
 from design_edit.schema import apply_patch, parse, serialize, strip_fences, walk  # noqa: E402
@@ -85,6 +85,8 @@ def gate(iid):
         errs.append('last criterion must be "Nothing unrelated to the request changes."')
     if not checks:
         errs.append("checks must not be empty")
+    for k, c in enumerate(checks or []):
+        errs += check_problems(c, f"check {k}")
     alts = p.get("alternatives") or []
     if not alts and not str(p.get("notes", "")).startswith("SINGLE:"):
         errs.append("give at least one alternative valid answer (or notes 'SINGLE: <why only one answer>')")
