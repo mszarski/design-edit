@@ -31,7 +31,7 @@ _JS_BOXES = """() => {
   return out;
 }"""
 
-TOL = 1.0  # px
+TOL = 4.0  # px: overflows under ~4px are invisible and mostly inherited from the screens themselves (e.g. a 1px stroke)
 
 
 def _chromium() -> str | None:
