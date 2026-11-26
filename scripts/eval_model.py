@@ -91,6 +91,51 @@ def review_content(prompt: list, output: str):
         for b in imgs]
 
 
+def _png_part(b: bytes) -> dict:
+    import base64
+
+    return {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(b).decode()}}
+
+
+def _renderer():
+    global _RENDERER
+    if _RENDERER is None:
+        from design_edit.geometry import Renderer
+
+        _RENDERER = Renderer().__enter__()
+    return _RENDERER
+
+
+def with_first_image(prompt: list) -> list:
+    """The prompt with a screenshot of the original design attached to the user turn."""
+    from design_edit.revise import _design_of
+    from design_edit.schema import parse
+
+    design = _design_of(prompt)
+    if not design or not isinstance(prompt[-1]["content"], str):
+        return prompt
+    png = _renderer().screenshot(parse(design))
+    text = prompt[-1]["content"] + "\n\nAttached: a screenshot of the design as it is now (before your edit)."
+    return prompt[:-1] + [{"role": "user", "content": [{"type": "text", "text": text}, _png_part(png)]}]
+
+
+COMPLETENESS = ("Here is a screenshot of the design after your patch. Check ONE thing only: is any part of the request "
+                "still missing (an instance not updated, a requested element not added, a step not done)? If something "
+                "is missing, reply with your full patch plus the extra lines needed; keep every line of your patch "
+                "exactly as it is. If nothing is missing, reply with your patch unchanged. Do not change anything else.")
+
+
+def completeness_content(prompt: list, output: str):
+    from design_edit.revise import _design_of
+    from design_edit.schema import apply_patch, parse, strip_fences
+
+    try:
+        after = apply_patch(parse(_design_of(prompt)), strip_fences(output).strip())
+    except Exception:  # noqa: BLE001
+        return COMPLETENESS.replace("Here is a screenshot of the design after your patch. ", "")
+    return [{"type": "text", "text": COMPLETENESS}, _png_part(_renderer().screenshot(after))]
+
+
 CHECKLIST = ("Before writing the patch, think it through: (1) restate what the request requires, including implied "
              "consequences; (2) list every element on the screen it affects, checking repeated components one by one; "
              "(3) note the design-system values that apply; (4) write the patch; (5) check the patch against your list "
@@ -120,6 +165,12 @@ def main() -> None:
                     help="sample this many answers (temperature 0.8) and keep the one most samples agree on (vLLM)")
     ap.add_argument("--keep-special-tokens", action="store_true",
                     help="decode special tokens (needed to split Gemma 4 thinking from the answer)")
+    ap.add_argument("--first-image", action="store_true",
+                    help="the first turn also shows a screenshot of the ORIGINAL design (before any edit)")
+    ap.add_argument("--completeness-check", action="store_true",
+                    help="after the review rounds, one more turn shows a screenshot of the result and asks only whether "
+                         "part of the request is missing; its patch is kept only if it contains every line of the "
+                         "previous patch (it may add, never change)")
     ap.add_argument("--review-image", action="store_true",
                     help="review rounds also show the rendered result: a screenshot of the edited design and a 2x "
                          "close-up of the edited area (Chromium), so the model can see what its patch looks like")
@@ -131,7 +182,7 @@ def main() -> None:
     args = ap.parse_args()
     global ARGS
     ARGS = args
-    if args.review_image:  # render screenshots in the job: install Chromium and its system libraries
+    if args.review_image or args.first_image or args.completeness_check:  # render screenshots in the job: install Chromium and its system libraries
         import subprocess
 
         subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"], check=True)
@@ -163,12 +214,14 @@ def main() -> None:
         from vllm import LLM, SamplingParams
 
         llm = LLM(model=model_path, dtype="bfloat16", max_model_len=args.max_model_len, gpu_memory_utilization=0.9,
-                  limit_mm_per_prompt={"image": 2 if args.review_image else 0})
+                  limit_mm_per_prompt={"image": 3 if (args.review_image or args.first_image or args.completeness_check) else 0})
         # Keep special tokens so channel-style reasoning (Gemma 4 thinking) stays separable from the answer.
         params = SamplingParams(temperature=0.0, max_tokens=args.max_new_tokens,
                                 skip_special_tokens=not args.keep_special_tokens)
 
         def generate(prompts):
+            if args.first_image:
+                prompts = [with_first_image(p) for p in prompts]
             if args.system_suffix == "checklist":
                 args.system_suffix = CHECKLIST
             if args.system_suffix:  # extra instruction appended to the system message (inference-time prompt test)
@@ -202,6 +255,19 @@ def main() -> None:
                 revised = [o.outputs[0].text for o in outs]
                 # a revision that comes back empty (e.g. reasoning ran out of tokens) keeps the previous answer
                 texts = [r if strip_fences(r).strip() else t for r, t in zip(revised, texts)]
+            if args.completeness_check:
+                convs = [p + [{"role": "assistant", "content": strip_fences(t)},
+                              {"role": "user", "content": completeness_content(p, t)}] for p, t in zip(prompts, texts)]
+                outs = llm.chat(convs, params, chat_template_kwargs=tkw, use_tqdm=False)
+                added = 0
+                for k, o in enumerate(outs):
+                    new = strip_fences(o.outputs[0].text).strip()
+                    old_lines = [x.strip() for x in strip_fences(texts[k]).strip().splitlines() if x.strip()]
+                    new_lines = {x.strip() for x in new.splitlines() if x.strip()}
+                    if new and old_lines and all(x in new_lines for x in old_lines) and len(new_lines) > len(old_lines):
+                        texts[k] = o.outputs[0].text  # strictly adds lines
+                        added += 1
+                print(f"completeness check added lines to {added}/{len(texts)} answers", flush=True)
             return texts
     elif args.multimodal:
         from transformers import AutoModelForMultimodalLM, AutoProcessor
