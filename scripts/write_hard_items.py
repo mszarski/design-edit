@@ -184,6 +184,10 @@ def main() -> None:
     ap.add_argument("--writer", default="deepseek-ai/DeepSeek-V4-Pro")
     ap.add_argument("--seed-base", type=int, default=60_000, help="eval v2 uses 9000+, train_real 100000+, v3 50000+")
     ap.add_argument("--workers", type=int, default=12)
+    ap.add_argument("--think", action="store_true",
+                    help="writer reasons (model-card settings: temperature 1.0, top_p 1.0, 64k tokens, ONE item per call). "
+                         "V4.1-Flash with thinking gated 11/15 items; V4-Pro 0/15 either way")
+    ap.add_argument("--prefix", default="t", help="screen/item id prefix (keeps batches apart)")
     args = ap.parse_args()
     assert os.environ.get("HF_TOKEN")
     work = Path(args.work).resolve()
@@ -199,13 +203,15 @@ def main() -> None:
     stats = {"screens": 0, "screen_fail": 0, "items": 0, "gated": 0, "repaired": 0}
 
     def ask(prompt: str, max_tokens: int, think: bool = True) -> str:
-        # DeepSeek-V4-Pro on the router reasons until max_tokens on these long prompts and returns nothing (even at
-        # reasoning_effort=low), so all calls run with reasoning off; the gate and one repair round catch mistakes.
+        if args.think:  # reasoning needs room: 64k tokens; the model card's sampling settings
+            return chat(args.writer, [{"role": "user", "content": prompt}], max_tokens=64000, temperature=1.0,
+                        timeout=1800, retries=2, extra={"top_p": 1.0})
+        # Without --think: reasoning off (with 2-5 items per call and 32k tokens the reasoning never finished).
         return chat(args.writer, [{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.7,
-                    timeout=1800, retries=2, extra=None if think else {"reasoning": {"enabled": False}})
+                    timeout=1800, retries=2, extra={"reasoning": {"enabled": False}})
 
     def one_screen(i: int) -> None:
-        sid = f"t{i:04d}"
+        sid = f"{args.prefix}{i:04d}"
         if sid in done:
             return
         rng = random.Random(args.seed_base + i)
@@ -232,9 +238,17 @@ def main() -> None:
             return
         design = (work / "screens" / f"{sid}.dsl").read_text()
         kinds = rng.sample(KINDS, args.items_per_screen)
-        items = parse_json(ask(ITEM_PROMPT.format(
-            spec=spec_text, conventions=conventions, check_spec=CHECK_SPEC, system=SYSTEM_PROMPT, ds=ds, sid=sid,
-            design=design, k=len(kinds), kinds=", ".join(kinds)), 32000, think=False))
+        def write(ks: list[str]):
+            out = parse_json(ask(ITEM_PROMPT.format(
+                spec=spec_text, conventions=conventions, check_spec=CHECK_SPEC, system=SYSTEM_PROMPT, ds=ds, sid=sid,
+                design=design, k=len(ks), kinds=", ".join(ks)), 32000, think=False))
+            return out if isinstance(out, list) else ([out] if isinstance(out, dict) else [])
+
+        if args.think:  # one item per call, in parallel
+            with ThreadPoolExecutor(len(kinds)) as inner:
+                items = [it for part in inner.map(lambda k: write([k]), kinds) for it in part[:1]]
+        else:
+            items = write(kinds)
         gated = []
         for k, it in enumerate(items if isinstance(items, list) else []):
             iid = f"{sid}i{k}"
