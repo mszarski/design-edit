@@ -81,6 +81,51 @@ def applies(before, patch):
     return after, ""
 
 
+def _walk_checks(c):
+    if isinstance(c, dict):
+        yield c
+        for k in ("any", "all"):
+            for x in c.get(k) or []:
+                yield from _walk_checks(x)
+
+
+def text_or_name(checks):
+    """Repair: a new_node text_contains check also accepts the label in the layer name (CONVENTIONS rule 3; many
+    screens keep labels only in names, and this was the most common defect agent reviewers fixed)."""
+    def fix(c):
+        if not isinstance(c, dict):
+            return c
+        if any(k in c for k in ("any", "all")):
+            k = "any" if "any" in c else "all"
+            return {**c, k: [fix(x) for x in c[k]]}
+        spec = c.get("new_node")
+        if isinstance(spec, dict) and spec.get("text_contains") and not spec.get("name_contains"):
+            alt = {k: v for k, v in spec.items() if k != "text_contains"} | {"name_contains": spec["text_contains"]}
+            pos = {k: c[k] for k in ("after", "before") if k in c}
+            return {"any": [c, {"new_node": alt, **pos}]}
+        return c
+    return [fix(c) for c in checks]
+
+
+def id_and_text_problems(checks, doc, request):
+    """Ids of nodes the edit creates can't be known in advance (CONVENTIONS rule 2); checks naming them made fair
+    answers fail in agent reviews. (Exact text is not restricted: derived values like "Packing (13)" are legitimate.)"""
+    ids = {n["id"] for n, _ in walk(doc)}
+    errs, req = [], request.lower()
+    for top in checks:
+        for c in _walk_checks(top):
+            refs = [c.get("node"), c.get("deleted"), c.get("exists"), c.get("after"), c.get("before")]
+            refs += list(c.get("order") or []) + list(c.get("same") or [])
+            spec = c.get("new_node") if isinstance(c.get("new_node"), dict) else {}
+            cnt = c.get("count") if isinstance(c.get("count"), dict) else {}
+            refs += [spec.get("parent"), cnt.get("parent")]
+            bad = sorted({r for r in refs if isinstance(r, str) and r not in ids})
+            if bad:
+                errs.append(f"check references ids not in the design {bad} (nodes the edit creates have no fixed id; "
+                            f"use new_node with after/before)")
+    return errs
+
+
 def gate(iid):
     p = json.loads((W / "proposals" / f"{iid}.json").read_text())
     errs = []
@@ -99,6 +144,7 @@ def gate(iid):
         errs.append("checks must not be empty")
     for k, c in enumerate(checks or []):
         errs += check_problems(c, f"check {k}")
+    errs += id_and_text_problems(checks or [], doc, p.get("request", ""))
     alts = p.get("alternatives") or []
     if not alts and not str(p.get("notes", "")).startswith("SINGLE:"):
         errs.append("give at least one alternative valid answer (or notes 'SINGLE: <why only one answer>')")

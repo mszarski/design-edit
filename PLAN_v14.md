@@ -132,6 +132,22 @@ directly, because models learn to pad.
 * **Screen gate fix:** numeric properties must be numbers. The fix rejects `size=w:80,h:20`-style screens that
   DeepSeek wrote and that the old gate let through.
 
+## Flash batch: cheap DeepSeek items vetted by check-vs-judge disagreement (result)
+* **V4.1-Flash with thinking:** 140 screens, 579 items through the gate (about 83%). Plain Gemma sampled 4 review
+  episodes per item; each final answer was graded by the exact checks and by the LLM judge on the criteria.
+* **Flagged:** 112 items (19%), where the checks and the judge disagreed.
+  * 228 answers failed the checks but passed the judge; 60 passed the checks but failed the judge.
+  * Opus review of the flagged items: the judge was right in 86 items (mostly checks too narrow, 13 too loose),
+    the checks were right in 23. Result: 109 approved (86 after fixes), 3 rejected.
+* **Unflagged:** an Opus spot-check of 30 gave 24 good, 6 fixable and none to reject. So the filter works.
+* **The most common defect** was a label check that reads only `text=` on screens that keep labels in the layer
+  name. `tool.text_or_name` repairs it automatically, and the gate now rejects checks that name ids not in the
+  design.
+* **Result:** 522 usable Flash items (413 unflagged and auto-approved after the repair, 109 reviewed). 49
+  never-solved, unflagged items are set aside, since RL gets no signal from them.
+* **Cost:** about $5 of API calls, 3 GPU-hours of sampling, and Opus review of about 140 items (about 0.9M tokens).
+  That's roughly 4× cheaper per usable item than Opus authoring, at similar quality.
+
 ## Phase 1C pilot: re-checking the realistic training set (result)
 * DeepSeek re-grading under the v2.2 conventions: 25 of 40 items pass the validator (62%). It dropped none.
 * **Blind Opus audit of those 25:**
