@@ -77,7 +77,6 @@ must never mean ambiguous, arbitrary or unfair.
 
 === CHECK LANGUAGE ===
 {check_spec}
-  {{"any": [<check>, ...]}}                            passes when one alternative passes
 
 === PATCH LANGUAGE AND DSL ===
 {system}
@@ -138,7 +137,8 @@ def main() -> None:
     stats = {"screens": 0, "screen_fail": 0, "items": 0, "gated": 0, "repaired": 0}
 
     def ask(prompt: str, max_tokens: int, think: bool = True) -> str:
-        # The writer is a reasoning model: reasoning tokens count against max_tokens, so budgets are generous.
+        # DeepSeek-V4-Pro on the router reasons until max_tokens on these long prompts and returns nothing (even at
+        # reasoning_effort=low), so all calls run with reasoning off; the gate and one repair round catch mistakes.
         return chat(args.writer, [{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.7,
                     timeout=1800, retries=2, extra=None if think else {"reasoning": {"enabled": False}})
 
@@ -172,7 +172,7 @@ def main() -> None:
         kinds = rng.sample(KINDS, args.items_per_screen)
         items = parse_json(ask(ITEM_PROMPT.format(
             spec=spec_text, conventions=conventions, check_spec=CHECK_SPEC, system=SYSTEM_PROMPT, ds=ds, sid=sid,
-            design=design, k=len(kinds), kinds=", ".join(kinds)), 32000))
+            design=design, k=len(kinds), kinds=", ".join(kinds)), 32000, think=False))
         gated = []
         for k, it in enumerate(items if isinstance(items, list) else []):
             iid = f"{sid}i{k}"
@@ -186,7 +186,7 @@ def main() -> None:
             except Exception as e:  # noqa: BLE001
                 errs = [f"{type(e).__name__}: {e}"]
             if errs:
-                fixed = parse_json(ask(REPAIR_PROMPT.format(errors="\n".join(errs), item=json.dumps(it, indent=1)), 16000))
+                fixed = parse_json(ask(REPAIR_PROMPT.format(errors="\n".join(errs), item=json.dumps(it, indent=1)), 16000, think=False))
                 if isinstance(fixed, dict):
                     fixed["screen_id"] = sid
                     path.write_text(json.dumps(fixed, indent=1))

@@ -37,6 +37,7 @@ SPEC = """Check language (JSON objects; all node ids refer to the design):
   {"count": {"type": "frame", "parent": "n4", "name_contains": "row"}, "eq": 3}
   {"new_node": {...}, "after": "n12"}                       a new node directly after (or "before") sibling n12
   {"any": [<check>, <check>]}                              passes when any alternative passes
+  {"all": [<check>, <check>]}                              passes when every part passes (e.g. inside "any")
   {"judge": "<criterion text>"}                             only for genuinely subjective criteria
 Plus "allowed": every existing node id the edit may change (props, deletion, children order, moving). Include
 nodes whose change is clearly acceptable for the request (e.g. a button's label as well as its frame). New nodes

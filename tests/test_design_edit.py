@@ -307,3 +307,14 @@ def test_new_node_position_and_ds_aware_lint():
     doc = parse('frame#n1 "Page" layout=col\n  text#n2 "A" size=15 color=#94A3B8')
     ds = "Type scale (size/weight): heading 24/700, body 15/400. Colors: disabled text #94A3B8, page #FFFFFF."
     assert lint(doc) and not lint(doc, ds)
+
+
+def test_check_all_inside_any():
+    from design_edit.checks import eval_check
+    from design_edit.schema import apply_patch, parse
+
+    before = parse('frame#n1 "Page" layout=col\n  text#n2 "A" size=14 weight=400')
+    c = {"any": [{"all": [{"node": "n2", "prop": "size", "gt": 14}, {"node": "n2", "prop": "weight", "gt": 400}]},
+                 {"node": "n2", "prop": "color", "eq": "#FF0000"}]}
+    assert eval_check(c, before, apply_patch(before, "set n2 size=18 weight=600")) is True
+    assert eval_check(c, before, apply_patch(before, "set n2 size=18")) is False
