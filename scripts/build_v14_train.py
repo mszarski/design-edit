@@ -27,14 +27,16 @@ COLS = ["prompt", "completion", "before", "after", "kind", "instruction", "orig_
         "criteria", "design_system", "screen", "checks", "allowed", "source", "item_id"]
 
 
-def hard_rows(work: Path) -> list[dict]:
+def hard_rows(work: Path, gated: bool = False) -> list[dict]:
     cwd = os.getcwd()
     os.chdir(work)
     spec = importlib.util.spec_from_file_location("v3tool", ROOT / "eval_v3" / "tool.py")
     T = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(T)
     rows = []
-    for f in sorted((work / "approved").glob("*.json")):
+    ids = (sorted(set((work / "gated.txt").read_text().split())) if gated
+           else [f.stem for f in sorted((work / "approved").glob("*.json"))])
+    for f in [work / "proposals" / f"{i}.json" for i in ids]:
         _, errs = T.gate(f.stem)
         if errs:
             continue
@@ -58,16 +60,20 @@ def hard_rows(work: Path) -> list[dict]:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--hard", nargs="+", required=True)
-    ap.add_argument("--concrete", required=True)
+    ap.add_argument("--hard", nargs="*", default=[])
+    ap.add_argument("--hard-gated", nargs="*", default=[],
+                    help="work dirs whose gate-passed (not yet reviewed) items to include, from gated.txt")
+    ap.add_argument("--concrete", default=None)
     ap.add_argument("--out", required=True)
     ap.add_argument("--push", default=None)
     a = ap.parse_args()
     rows = []
     for w in a.hard:
         rows += hard_rows(Path(w).resolve())
+    for w in a.hard_gated:
+        rows += hard_rows(Path(w).resolve(), gated=True)
     n_hard = len(rows)
-    for line in open(a.concrete):
+    for line in open(a.concrete) if a.concrete else []:
         r = json.loads(line)
         if r.get("v22") not in ("keep", "fix") or r["kind"] == "v2_goal" or '"judge"' in r.get("checks", ""):
             continue
