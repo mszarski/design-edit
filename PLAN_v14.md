@@ -249,6 +249,21 @@ clipping, sibling overlap, text overflow and off-page content.
   * a Qwen pilot with the audit fixes (lint with the item's spacing scale and radius; `--uncovered-penalty`) and the
     same gates. Gemma's pilot was weak (held-out +2.8, eval v3 dev −7.0).
 
+## Qwen 3.8 27B baselines (after the switch)
+* **Eval v3 with a review round:** 0.846 against Gemma's 0.874. Paired −2.9 ± 5.4; dev 0.920 against 0.897; test
+  0.770 against 0.851.
+  * The first run read 0.811 because of an eval bug: a review turn that hit the token limit replaced the first answer
+    with cut-off reasoning. Qwen's template opens `<think>` in the prompt, so no tag is left to strip.
+  * `eval_model.py` now keeps the previous patch when the review is cut off.
+  * 6 answers are still invalid because the first turn ran out of its 8,192 tokens.
+* **The review round helps Qwen too:** dev 0.920 against 0.793 single-pass.
+* **Re-pick on the 802 hard items** (8 samples each, checks plus geometry, unfinished counts as a fail):
+  * 462 always, 309 sometimes (263 without judge checks), 31 never;
+  * 4.8% of samples unfinished at 8,192 tokens; median 1,583 tokens.
+* **The concern:** 263 prompts minus a 100-prompt held-out set leaves 163 to train on. That's fewer than the 225 the
+  Gemma pilot overfit. Grow the set first with Flash batch 2, sampled once with Qwen to vet it (check-vs-judge
+  flags) and re-pick it in the same pass.
+
 ## Why design-system audits keep failing (Opus analysis of the 15 eval-v3 audit items)
 * **Pass counts:** Gemma + review 13/15, plain Gemma 13/15, v14 SFT 11/15, RL pilot 10/15, Qwen 10/15.
 * **The 18 failures:**
