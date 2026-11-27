@@ -338,3 +338,13 @@ def test_uncovered_changes():
     checks = [{"node": "n2", "prop": "weight", "eq": 600}]
     a = apply_patch(b, "set n2 weight=600\nset n3 weight=500\ninsert n1 2 text#n9 \"C\" size=14")
     assert uncovered_changes(b, a, checks) == ["n3.weight"]
+
+
+def test_unquoted_number_label_matches_text_check():
+    from design_edit.checks import eval_check
+    from design_edit.schema import apply_patch, parse
+
+    b = parse('frame#n1 "P" layout=col\n  text#n2 "Count" text="12"')
+    a = apply_patch(b, "set n2 text=40")
+    assert eval_check({"node": "n2", "prop": "text", "eq": "40"}, b, a) is True
+    assert eval_check({"node": "n2", "prop": "text", "in": ["40", "41"]}, b, a) is True

@@ -31,16 +31,26 @@ def _norm(v: Any) -> Any:
     return v.upper() if isinstance(v, str) and v.startswith("#") else v
 
 
+def _num_as_text(v: Any, w: Any) -> Any:
+    """A label written unquoted (text=40) parses as a number but renders as "40": compare it as text when the
+    check expects text."""
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and (isinstance(w, str) or (
+            isinstance(w, list) and any(isinstance(x, str) for x in w))):
+        return str(int(v)) if float(v).is_integer() else str(v)
+    return v
+
+
 def _cmp(val: Any, spec: dict[str, Any], old: Any = None) -> bool:
     for op, want in spec.items():
         if op not in _OPS:
             continue
         v, w = _norm(val), _norm(want)
+        alt = _norm(_num_as_text(val, want))  # an unquoted number label also matches its text form
         try:
-            ok = {"eq": lambda: v == w or (isinstance(v, (int, float)) and isinstance(w, (int, float))
-                                           and abs(v - w) < 1e-6),
-                  "ne": lambda: v != w,
-                  "in": lambda: v in [_norm(x) for x in w],
+            ok = {"eq": lambda: v == w or alt == w or (isinstance(v, (int, float)) and isinstance(w, (int, float))
+                                                       and abs(v - w) < 1e-6),
+                  "ne": lambda: v != w and alt != w,
+                  "in": lambda: v in [_norm(x) for x in w] or alt in [_norm(x) for x in w],
                   "lt": lambda: v is not None and v < w, "gt": lambda: v is not None and v > w,
                   "le": lambda: v is not None and v <= w, "ge": lambda: v is not None and v >= w,
                   "contains": lambda: isinstance(v, str) and str(w).lower() in v.lower(),
