@@ -252,7 +252,9 @@ def main() -> None:
                 convs = [p + [{"role": "assistant", "content": strip_fences(t)},
                               {"role": "user", "content": review_content(p, t)}] for p, t in zip(prompts, texts)]
                 outs = llm.chat(convs, params, chat_template_kwargs=tkw, use_tqdm=False)
-                revised = [o.outputs[0].text for o in outs]
+                # a review that hit the token limit has no finished answer (Qwen's template opens <think> in the
+                # prompt, so its cut-off reasoning has no tag to strip): treat it as empty and keep the previous answer
+                revised = [o.outputs[0].text if o.outputs[0].finish_reason == "stop" else "" for o in outs]
                 # a revision that comes back empty (e.g. reasoning ran out of tokens) keeps the previous answer
                 texts = [r if strip_fences(r).strip() else t for r, t in zip(revised, texts)]
             if args.completeness_check:
