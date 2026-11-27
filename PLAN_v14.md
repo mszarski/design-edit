@@ -276,6 +276,10 @@ clipping, sibling overlap, text overflow and off-page content.
   * 490 total: 390 train, 100 held out (seed 11).
   * Train mix: multi_step 101, propagate 81, goal 81, structure 64, audit 43, pattern_copy 20.
   * The held-out mean from the re-pick (×8) is 0.686. A clean ×4 baseline sample is the pilot's comparison point.
+* **Clean held-out baseline (Qwen ×4, 8,192 cap):** 0.765 ± 0.052 (306/400). This is higher than the re-pick's 0.686,
+  because items picked for "sometimes" regress toward the mean on a fresh sample. 32/400 (8%) answers were unfinished.
+  Median text length is 1,298 words; this counts the whole reply, since Qwen has no Gemma channel tag.
+  * **Pilot gates:** held-out ≥ 0.805 (+4); median words within 25% (974–1,623); eval v3 dev with review ≥ 0.920.
 
 ## Why design-system audits keep failing (Opus analysis of the 15 eval-v3 audit items)
 * **Pass counts:** Gemma + review 13/15, plain Gemma 13/15, v14 SFT 11/15, RL pilot 10/15, Qwen 10/15.
