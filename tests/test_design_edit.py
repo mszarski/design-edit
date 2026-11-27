@@ -328,3 +328,13 @@ def test_check_problems_flags_inert_checks():
     assert check_problems({"node": "n5", "prop": "fill", "eq": "#FFFFFF", "child_of": "n2"})
     assert not check_problems({"any": [{"node": "n5", "prop": "fill", "eq": "#FFFFFF"},
                                        {"new_node": {"parent": "n1", "text_contains": "Hi"}, "after": "n3"}]})
+
+
+def test_uncovered_changes():
+    from design_edit.checks import uncovered_changes
+    from design_edit.schema import apply_patch, parse
+
+    b = parse('frame#n1 "P" layout=col\n  text#n2 "A" size=14 weight=400\n  text#n3 "B" size=14 weight=400')
+    checks = [{"node": "n2", "prop": "weight", "eq": 600}]
+    a = apply_patch(b, "set n2 weight=600\nset n3 weight=500\ninsert n1 2 text#n9 \"C\" size=14")
+    assert uncovered_changes(b, a, checks) == ["n3.weight"]

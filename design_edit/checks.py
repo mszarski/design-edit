@@ -246,3 +246,47 @@ def grade_checks(before: Node | str, patch_text: str, checks: list[dict] | str, 
     score = max(0.0, (raw - noop) / (1 - noop)) if noop < 1 else 0.0
     return {"valid": True, "score": round(score, 4), "pass": kin == 1.0 and kout == 1.0, "keep_in": round(kin, 4),
             "keep_out": round(kout, 4), "why": "; ".join(map(str, failed))[:300]}
+
+
+def uncovered_changes(before: Node | str, after: Node | str, checks: list[dict] | str) -> list[str]:
+    """(node, prop) changes on EXISTING nodes that no check mentions: a cost for edits beyond what the item grades.
+
+    A check "mentions" (node, prop) via {"node", "prop"}, a "same" check's props, or (for any prop) "deleted"/"exists"
+    on the node. New nodes and layer names are free. Used by the RL reward (plan v14: over-editing, e.g. adding weights
+    to every text in an audit region)."""
+    from .schema import walk
+
+    before = parse(before) if isinstance(before, str) else before
+    after = parse(after) if isinstance(after, str) else after
+    checks = json.loads(checks) if isinstance(checks, str) else checks
+    covered, whole = set(), set()
+
+    def visit(c):
+        if not isinstance(c, dict):
+            return
+        for k in ("any", "all"):
+            for x in c.get(k) or []:
+                visit(x)
+        if "node" in c and "prop" in c:
+            covered.add((c["node"], c["prop"]))
+        for k in ("deleted", "exists"):
+            if k in c:
+                whole.add(c[k])
+        for nid in c.get("same") or []:
+            for prop in c.get("props") or []:
+                covered.add((nid, prop))
+
+    for c in checks:
+        visit(c)
+    b = {n["id"]: n["props"] for n, _ in walk(before)}
+    out = []
+    for n, _ in walk(after):
+        if n["id"] not in b or n["id"] in whole:
+            continue
+        old = b[n["id"]]
+        for prop in set(old) | set(n["props"]):
+            if prop == "name" or old.get(prop) == n["props"].get(prop):
+                continue
+            if (n["id"], prop) not in covered:
+                out.append(f"{n['id']}.{prop}")
+    return out

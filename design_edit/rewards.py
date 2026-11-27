@@ -183,9 +183,13 @@ def lint(doc: Node, ds_text: str | None = None) -> list[str]:
     """Design-rule violations: things a designer would flag in review.
 
     With the item's design system (ds_text), its own type scale and its disabled-text color are allowed, so an answer
-    that follows the system is not penalized. Frames and rects both count as backgrounds for their children."""
+    that follows the system is not penalized; spacing must be on its spacing scale and radii its radius (or 0 / 999
+    pills). Rewards use the issues an edit introduces, so pre-existing drift costs nothing unless it is added. Frames and rects both count as backgrounds for their children."""
     issues: list[str] = []
     sizes, low_ok = ds_allowances(ds_text)
+    scale = {int(x) for x in re.findall(r"\d+", (re.search(r"Spacing scale: ([\d, ]+)", ds_text or "") or [None, ""])[1])}
+    m = re.search(r"Corner radius: (\d+)", ds_text or "")
+    radius = int(m.group(1)) if m else None
 
     def rec(node: Node, bg: str) -> None:
         p = node["props"]
@@ -200,6 +204,13 @@ def lint(doc: Node, ds_text: str | None = None) -> list[str]:
             v = p.get(key)
             if isinstance(v, (int, float)) and v % 2 != 0:
                 issues.append(f"spacing:{node['id']}:{key}")
+            elif scale and v is not None:  # the item's own spacing scale (e.g. no 12 or 20 on 4/8/16/24/32/48)
+                vals = [v] if isinstance(v, (int, float)) else [int(x) for x in str(v).split() if x.isdigit()]
+                if any(x not in scale and x != 0 for x in vals):
+                    issues.append(f"spacing_scale:{node['id']}:{key}")
+        r_ = p.get("radius")
+        if radius is not None and isinstance(r_, (int, float)) and r_ not in (0, radius, 999):
+            issues.append(f"radius:{node['id']}")
         for c in node["children"]:
             rec(c, fill if isinstance(fill, str) else bg)
 

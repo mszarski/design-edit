@@ -93,6 +93,9 @@ def main() -> None:
     ap.add_argument("--geometry", action="store_true",
                     help="checks reward: render before/after in Chromium (design_edit.geometry) and treat new clipping, "
                          "overlap, text overflow or off-page content as failing; -0.05 per new issue (max 4)")
+    ap.add_argument("--uncovered-penalty", type=float, default=0.0,
+                    help="checks reward: cost per property change on an existing node that no check mentions "
+                         "(checks.uncovered_changes), capped at 4 changes; e.g. 0.04")
     ap.add_argument("--mask-truncated", action="store_true",
                     help="drop completions cut off at --max-completion-length from the loss, so long careful "
                          "reasoning isn't punished as a wrong answer (rounds through v13 shortened thinking)")
@@ -217,6 +220,17 @@ def main() -> None:
                     out.append(-0.5)
                     continue
                 ok, n_new = g["pass"], 0
+                extra = 0.0
+                if args.uncovered_penalty:
+                    try:
+                        from design_edit.checks import uncovered_changes
+
+                        bd0 = parse(b)
+                        ref_free = set(uncovered_changes(bd0, a, ch)) if a else set()  # the reference's own extras
+                        n_unc = len(set(uncovered_changes(bd0, apply_patch(bd0, t), ch)) - ref_free)
+                        extra = args.uncovered_penalty * min(n_unc, 4)
+                    except Exception:  # noqa: BLE001
+                        extra = 0.0
                 if args.geometry:  # rendered layout problems the edit introduced (what designers see go wrong)
                     try:
                         bd = parse(b)
@@ -226,7 +240,7 @@ def main() -> None:
                     ok = ok and n_new == 0
                 # mostly pass/fail, a little partial credit: partial credit alone paid for edits that fixed one
                 # instance out of several (plan v14 audit)
-                out.append(0.7 * float(ok) + 0.3 * g["score"] - 0.05 * min(n_new, 4))
+                out.append(0.7 * float(ok) + 0.3 * g["score"] - 0.05 * min(n_new, 4) - extra)
             else:
                 s_ = score(b, a, t, r)
                 out.append(0.5 * s_.f1 + 0.5 * float(s_.exact) if s_.valid else -0.5)
