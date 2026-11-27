@@ -238,6 +238,17 @@ clipping, sibling overlap, text overflow and off-page content.
   it is gaining general skill. The pilot was cancelled at about step 30 (no step-50 checkpoint could be saved before
   the timeout).
 
+## Decision: switch the base model to Qwen 3.8 27B
+* **Why:** on the 100 held-out RL prompts, plain Qwen solves 0.823 against plain Gemma's 0.642 (+18). It thinks
+  about 2.5× longer (median 908 words, about 1,800 tokens). 4.5% of its answers ran past 8,192 tokens.
+* **History agrees:** in round 7 an identical RL reward lifted Qwen's held-out goal edits (rubric 0.950 → 0.996) but
+  left Gemma flat. Figma's current model is also post-trained on Qwen 3.8 27B.
+* **The user chose Qwen,** setting aside the earlier preference for a non-Chinese trained model.
+* **Next:**
+  * re-pick RL prompts on Qwen (802 hard items × 8 samples), since Gemma's "sometimes" set is mostly solved by Qwen;
+  * a Qwen pilot with the audit fixes (lint with the item's spacing scale and radius; `--uncovered-penalty`) and the
+    same gates. Gemma's pilot was weak (held-out +2.8, eval v3 dev −7.0).
+
 ## Why design-system audits keep failing (Opus analysis of the 15 eval-v3 audit items)
 * **Pass counts:** Gemma + review 13/15, plain Gemma 13/15, v14 SFT 11/15, RL pilot 10/15, Qwen 10/15.
 * **The 18 failures:**
