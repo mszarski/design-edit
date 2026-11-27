@@ -238,6 +238,30 @@ clipping, sibling overlap, text overflow and off-page content.
   it is gaining general skill. The pilot was cancelled at about step 30 (no step-50 checkpoint could be saved before
   the timeout).
 
+## Why design-system audits keep failing (Opus analysis of the 15 eval-v3 audit items)
+* **Pass counts:** Gemma + review 13/15, plain Gemma 13/15, v14 SFT 11/15, RL pilot 10/15, Qwen 10/15.
+* **The 18 failures:**
+  * missed deviation: 6;
+  * changed an on-system value: 4–5;
+  * wrong token: 0;
+  * scope error: 0;
+  * item at fault: about 1–3;
+  * empty or cut-off answer: 6 (Qwen 4, plain Gemma 2; the review round fixes Gemma's).
+* **The pilot regressed on 3 items and improved on none.** All three are systematic:
+  * it checks spacing against a generic grid instead of the item's scale (pad 12 or 20 where the scale has neither);
+  * it trusts the type scale over the component spec (a primary label at 13/500 should be weight 600);
+  * it adds weights to every text to match a size/weight pair, which also flattens states. The SFT model makes the
+    identical over-edit, so v14 training data may teach it.
+* **Reward blind spot:** `rewards.lint` flags only odd spacing, so off-scale 12 or 20 never costs anything.
+* **Fixes for the next round:**
+  * lint reads the item's spacing scale and radius;
+  * a per-property penalty for changes no check covers;
+  * contrastive audit training items (component spec over type scale; never add props a node doesn't have; same-role
+    siblings must match; scales that leave out 12 or 20);
+  * eval fixes: item 70 (the stepper fill is acceptable; secondary labels keep their style), item 8 (the
+    primary/secondary swap is acceptable, not required), and a written convention on whether the type scale is
+    size/weight pairs or sizes only.
+
 ## Phase 2 result: SFT on plain Gemma's own review episodes does not add capability
 
 | | eval v3 single pass | eval v3 + review round | eval v2.2 | thinking (median words) |
