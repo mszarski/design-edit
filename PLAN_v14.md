@@ -218,6 +218,26 @@ clipping, sibling overlap, text overflow and off-page content.
   * heldout: 100 prompts, base solve rate 0.615. That's 400 graded answers per checkpoint at 4 samples each, so
     about ±5 points.
 
+## Phase 3, stage 2: RL pilot (plain Gemma, 25 steps) — gates not met
+* **Run:** 225 prompts; 4 prompts × 8 rollouts per step; reward 0.7·pass + 0.3·score with the design-system lint and
+  4px geometry; cap 4,096 with truncated completions masked; KL 0.01; about 9.5 min/step on 2×H200.
+* **Training curves, steps 1–5 → 21–25:**
+  * reward 0.599 → 0.731;
+  * completion length 1,208 → 1,636 tokens (thinking grew, it didn't shrink);
+  * clipped 2.5% → 3.7%;
+  * zero-std groups 20% throughout;
+  * KL 0.038.
+* **Go/no-go at checkpoint 25:**
+  * **held-out:** 0.642 → 0.670, paired +2.8 ± 5.2 (30 prompts better, 22 worse). Gate +4: **not met**;
+  * **thinking:** 370 → 389 words. Gate: met;
+  * **eval v3 + review:** 0.850 against 0.874 (−2.9 ± 5.2); dev 0.837 against 0.907 (−7.0 ± 6.3); test +1.1.
+    Gate dev ≥ 0.897: **not met**;
+  * **by kind:** propagate, multi_step and pattern_copy up a little; system_audit 0.867 → 0.667 and goal
+    0.971 → 0.886 down.
+* **Training reward rose about 13 points but held-out only about 3:** RL is fitting the 225 training prompts more than
+  it is gaining general skill. The pilot was cancelled at about step 30 (no step-50 checkpoint could be saved before
+  the timeout).
+
 ## Phase 2 result: SFT on plain Gemma's own review episodes does not add capability
 
 | | eval v3 single pass | eval v3 + review round | eval v2.2 | thinking (median words) |
