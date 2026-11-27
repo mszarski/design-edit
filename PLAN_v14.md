@@ -264,6 +264,19 @@ clipping, sibling overlap, text overflow and off-page content.
   Gemma pilot overfit. Grow the set first with Flash batch 2, sampled once with Qwen to vet it (check-vs-judge
   flags) and re-pick it in the same pass.
 
+## Qwen RL set (`design-edits-v14-rl-qwen`)
+* **Flash batch 2:** 964 DeepSeek-written items. Qwen ×8 solved 572 always, 320 sometimes, 72 never. 116 were
+  flagged by check-vs-judge disagreement.
+  * Three Opus reviewers took the 69 flagged-and-sometimes items: 8 kept as-is, 60 fixed, 1 rejected.
+  * Reviewer 3 found a checker bug. An unquoted number label (`text=40`) parsed as a number and failed string
+    checks. `_cmp` now accepts either form. Regression: ev3 0/176, hard_opus 0/303, flash 1/522 items failing their
+    own gate.
+* **Set:** 263 Qwen-sometimes items from the 802 pool, plus 227 from Flash2 (re-gated, with solve rate recomputed
+  under the current checks and geometry). No judge checks.
+  * 490 total: 390 train, 100 held out (seed 11).
+  * Train mix: multi_step 101, propagate 81, goal 81, structure 64, audit 43, pattern_copy 20.
+  * The held-out mean from the re-pick (×8) is 0.686. A clean ×4 baseline sample is the pilot's comparison point.
+
 ## Why design-system audits keep failing (Opus analysis of the 15 eval-v3 audit items)
 * **Pass counts:** Gemma + review 13/15, plain Gemma 13/15, v14 SFT 11/15, RL pilot 10/15, Qwen 10/15.
 * **The 18 failures:**
